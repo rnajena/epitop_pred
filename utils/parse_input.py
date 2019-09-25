@@ -8,7 +8,6 @@ import pickle
 
 cwd = "/home/go96bix/projects/epitop_pred"
 directory = os.path.join(cwd, "data_generator")
-# directory = os.path.join(cwd,"epitope_data_small")
 classes = 0
 num_samples = []
 all_samples = []
@@ -21,13 +20,11 @@ use_old_test_set = True
 if use_old_test_set:
 	test_df_old = pd.DataFrame.from_csv(
 		"/home/le86qiz/Documents/Konrad/general_epitope_analyses/bepipred_evaluation/deepipred_results/test_samples.csv",
-		sep=",",header=None, index_col=None)
+		sep=",", header=None, index_col=None)
 	test_df_old_y = test_df_old[2].values
-	# test_df_old = test_df_old[test_df_old[2]=='true_epitopes'][1].values
 	test_df_old = test_df_old[1].values
 else:
 	test_df_old = []
-
 
 for root, dirs, files in os.walk(directory):
 	for file in files:
@@ -48,7 +45,7 @@ test_df = pd.DataFrame()
 train_df = pd.DataFrame()
 
 if use_old_test_set:
-	min_samples_test_set = len(test_df_old)/2
+	min_samples_test_set = len(test_df_old) / 2
 else:
 	min_samples_test_set = min_samples
 
@@ -59,23 +56,11 @@ if classic:
 		val_df = val_df.append(val_df_class)
 		df_help = df_class.drop(val_df_class.index)
 
-		# test set
-		# if use_old_test_set:
-		# 	if df_class['y'] == 'true_epitope':
-		# 		test_df_class = test_df_old
-		# 	else:
-		# 		test_df_class = df_help.sample(len(test_df_old))
-		# else:
 		test_df_class = df_help.sample(n=int(0.2 * min_samples))
 		test_df = test_df.append(test_df_class)
 		df_help = df_help.drop(test_df_class.index)
 		# train set
 		train_df = train_df.append(df_help.sample(frac=1))
-
-		# foo = pd.merge(val_df,train_df,'inner')
-		# print(pd.merge(val_df,train_df,'inner'))
-
-		# all_samples[index] = train_df
 
 	for i in train_df['y'].unique():
 		directory2 = directory + f"/train/{i}"
@@ -84,7 +69,6 @@ if classic:
 
 	for index, sample in train_df.iterrows():
 		directory2 = directory + f"/train/{sample['y']}/{index}.csv"
-		# sample.seq.to_csv(directory, sep='\t', encoding='utf-8')
 		f = open(directory2, 'w')
 		f.write(f"{sample.name}\t{sample[0]}")
 		f.close()
@@ -123,7 +107,6 @@ else:
 		selection = np.random.permutation(range(len(df_class.index)))
 		np_class_0 = df_class[0].values
 		np_class_y = df_class['y'].values
-		# while samples < int(0.2 * min_samples):
 		for i in selection:
 			len_sample = len(np_class_0[i])
 			if embedding:
@@ -132,13 +115,13 @@ else:
 
 			max_shift = len_sample % slicesize
 			# start from random position and generate non overlapping windows
-			start_pos = np.random.random_integers(0,max_shift)
+			start_pos = np.random.random_integers(0, max_shift)
 			if do_val:
-				for j in range(start_pos,len_sample-slicesize+1,slicesize):
+				for j in range(start_pos, len_sample - slicesize + 1, slicesize):
 					if embedding:
-						X_val.append(sample_embedding[j:j+slicesize])
+						X_val.append(sample_embedding[j:j + slicesize])
 					else:
-						X_val.append(np_class_0[i][j:j+slicesize])
+						X_val.append(np_class_0[i][j:j + slicesize])
 					Y_val.append(np_class_y[i])
 					samples += 1
 
@@ -148,9 +131,9 @@ else:
 						samples = 0
 						break
 			elif do_test:
-				for j in range(start_pos,len_sample-slicesize,slicesize):
+				for j in range(start_pos, len_sample - slicesize, slicesize):
 					if embedding:
-						X_test.append(sample_embedding[j:j+slicesize])
+						X_test.append(sample_embedding[j:j + slicesize])
 					else:
 						if use_old_test_set:
 							if len(X_test) < min_samples_test_set:
@@ -167,7 +150,7 @@ else:
 							samples = 0
 							break
 						else:
-							X_test.append(np_class_0[i][j:j+slicesize])
+							X_test.append(np_class_0[i][j:j + slicesize])
 							Y_test.append(np_class_y[i])
 							samples += 1
 
@@ -202,50 +185,46 @@ else:
 			with open(directory + f"/train/{sample}/{index}.pkl", "wb") as outfile:
 				pickle.dump(X_train[index], outfile)
 
-
-		for index, i in enumerate((X_test,X_val,X_train)):
+		for index, i in enumerate((X_test, X_val, X_train)):
 			len_i = i.shape[0]
 			shuffle = np.random.permutation(range(len_i))
 			if index == 0:
-				pickle.dump(X_test[shuffle], open(directory + '/X_test.pkl','wb'))
-				pd.DataFrame(Y_test[shuffle]).to_csv(directory + '/Y_test.csv', sep='\t', encoding='utf-8', header=None, index=None)
+				pickle.dump(X_test[shuffle], open(directory + '/X_test.pkl', 'wb'))
+				pd.DataFrame(Y_test[shuffle]).to_csv(directory + '/Y_test.csv', sep='\t', encoding='utf-8', header=None,
+				                                     index=None)
 			elif index == 1:
 				pickle.dump(X_val[shuffle], open(directory + '/X_val.pkl', 'wb'))
-				pd.DataFrame(Y_val[shuffle]).to_csv(directory + '/Y_val.csv', sep='\t', encoding='utf-8', header=None, index=None)
+				pd.DataFrame(Y_val[shuffle]).to_csv(directory + '/Y_val.csv', sep='\t', encoding='utf-8', header=None,
+				                                    index=None)
 			elif index == 2:
 				pickle.dump(X_train[shuffle], open(directory + '/X_train.pkl', 'wb'))
-				pd.DataFrame(Y_train[shuffle]).to_csv(directory + '/Y_train.csv', sep='\t', encoding='utf-8', header=None, index=None)
+				pd.DataFrame(Y_train[shuffle]).to_csv(directory + '/Y_train.csv', sep='\t', encoding='utf-8',
+				                                      header=None, index=None)
 
 	else:
 		for index, sample in enumerate(Y_train):
 			directory2 = directory + f"/train/{sample}/{index}.csv"
-			# sample.seq.to_csv(directory, sep='\t', encoding='utf-8')
 			f = open(directory2, 'w')
 			f.write(f"{index}\t{X_train[index]}")
 			f.close()
 
-		for index, i in enumerate((X_test,X_val,X_train)):
+		for index, i in enumerate((X_test, X_val, X_train)):
 			len_i = i.shape[0]
 			shuffle = np.random.permutation(range(len_i))
 			if index == 0:
-				pd.DataFrame(X_test[shuffle]).to_csv(directory + '/X_test.csv', sep='\t', encoding='utf-8', header=None, index=None)
-				pd.DataFrame(Y_test[shuffle]).to_csv(directory + '/Y_test.csv', sep='\t', encoding='utf-8', header=None, index=None)
+				pd.DataFrame(X_test[shuffle]).to_csv(directory + '/X_test.csv', sep='\t', encoding='utf-8', header=None,
+				                                     index=None)
+				pd.DataFrame(Y_test[shuffle]).to_csv(directory + '/Y_test.csv', sep='\t', encoding='utf-8', header=None,
+				                                     index=None)
 
 			if index == 1:
-				pd.DataFrame(X_val[shuffle]).to_csv(directory + '/X_val.csv', sep='\t', encoding='utf-8', header=None, index=None)
-				pd.DataFrame(Y_val[shuffle]).to_csv(directory + '/Y_val.csv', sep='\t', encoding='utf-8', header=None, index=None)
+				pd.DataFrame(X_val[shuffle]).to_csv(directory + '/X_val.csv', sep='\t', encoding='utf-8', header=None,
+				                                    index=None)
+				pd.DataFrame(Y_val[shuffle]).to_csv(directory + '/Y_val.csv', sep='\t', encoding='utf-8', header=None,
+				                                    index=None)
 
 			if index == 2:
-				pd.DataFrame(X_train[shuffle]).to_csv(directory + '/X_train.csv', sep='\t', encoding='utf-8', header=None, index=None)
-				pd.DataFrame(Y_train[shuffle]).to_csv(directory + '/Y_train.csv', sep='\t', encoding='utf-8', header=None, index=None)
-
-# todo count nicht ueberla[ppende fenster
-# berechne annzahl asmaples in sets
-# ziehe zufaellig nicht epitope seq und ziehe daraus nicht ueberlappende fenster
-# mach so lange wie anzahl samples kleiner als gewollt
-
-# with open(os.path.join(directory,file),"r") as inputfile:
-#     os.mkdir(os.path.join(directory,file[:-4]))
-#     for index, line in enumerate(inputfile):
-#         with open(os.path.join(directory,file[:-4],f"{index}.csv"), "w") as output:
-#             output.write(f"{index}\t{line}")
+				pd.DataFrame(X_train[shuffle]).to_csv(directory + '/X_train.csv', sep='\t', encoding='utf-8',
+				                                      header=None, index=None)
+				pd.DataFrame(Y_train[shuffle]).to_csv(directory + '/Y_train.csv', sep='\t', encoding='utf-8',
+				                                      header=None, index=None)

@@ -1,5 +1,3 @@
-import os
-
 # with open("/home/le86qiz/Documents/Konrad/prediction_pipeline/raptorx_pipeline/NP_220200.1.faa","r") as input_file:
 with open("/home/le86qiz/Documents/Konrad/stiko/second_prediction/bacteria/bacteria_gram-/results/single_fastas/sp_P14283_PERT_BORPE.faa","r") as input_file:
     seq = ""

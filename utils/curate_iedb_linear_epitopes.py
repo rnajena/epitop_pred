@@ -1,6 +1,4 @@
-import os
 import numpy as np
-from docutils.nodes import problematic
 
 unique_prot_dict = {}
 """
@@ -44,17 +42,12 @@ protein_counter = 0
 for protein, hits in unique_prot_dict.items():
 	epitope_arr = np.zeros(len(protein))
 	non_epitope_arr = np.zeros(len(protein))
-	header_long =[]
+	header_long = []
 	mask = np.array([-1] * len(protein))
 	for index, marked_area in enumerate(hits):
 		# 	solve merging
 		start, stop, header = marked_area
 		header_long.append(f"{header}_{start}_{stop}")
-		# conflict = (any(mask[start: stop] == 0) and header.startswith("Positive")) or (any(mask[start:stop] == 1) and
-		#                                                                   header.startswith("Negative"))
-		# if conflict:
-		# 	number_conflicts += 1
-		# 	print(f"{number_conflicts} conflicts: {mask[start: stop]} is in conflict with {header}")
 		if header.startswith("Positive"):
 			epitope_arr[start:stop] += 1
 		else:
@@ -74,17 +67,18 @@ for protein, hits in unique_prot_dict.items():
 	for i in range(len(protein)):
 		epi_count = epitope_arr[i]
 		non_epi_count = non_epitope_arr[i]
-		if epi_count+non_epi_count == 0:
+		if epi_count + non_epi_count == 0:
 			quantity.append("-")
 		else:
-			quantity.append(str(epi_count/(epi_count+non_epi_count)))
+			quantity.append(str(epi_count / (epi_count + non_epi_count)))
 
 	quantity_str = "\t".join(quantity)
 	mask_str = ["-" if i == -1 else str(i) for i in list(mask)]
 	mask_str = "\t".join(mask_str)
 	header_long_str = "\t".join(header_long)
 
-	with open(f"/home/go96bix/projects/raw_data/bepipred_proteins_with_marking/protein_{protein_counter}.fasta", "w") as out_fasta:
+	with open(f"/home/go96bix/projects/raw_data/bepipred_proteins_with_marking/protein_{protein_counter}.fasta",
+	          "w") as out_fasta:
 		out_fasta.write(f">{header_long_str}\n")
 		out_fasta.write(f"{protein.upper()}\n")
 		out_fasta.write(f"{mask_str}\n")

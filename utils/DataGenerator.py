@@ -9,9 +9,6 @@ import keras_preprocessing.image.utils as utils
 from random import sample as randsomsample
 import pandas as pd
 import math
-import sys
-# sys.path.insert(0, '/home/go96bix/projects/Masterarbeit/ML')
-# import DataParsing
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from allennlp.commands.elmo import ElmoEmbedder
 import torch
@@ -29,26 +26,6 @@ class Elmo_embedder():
 		self.seqvec = ElmoEmbedder(self.options, self.weights, cuda_device=-1)
 
 	def elmo_embedding(self, X, start, stop):
-		# pool = multiprocessing.pool.ThreadPool()
-
-		# def single_embedding(X):
-		#     # X_parsed = np.empty((X.shape[0], stop - start, 1024))
-		#     # for index, i in enumerate(X):
-		#     #     residue_embedding = self.seqvec.embed_sentence(list(i[start:stop])).sum(axis=0)
-		#     #     X_parsed[index] = residue_embedding
-		#     return self.seqvec.embed_sentence(list(X[start:stop])).sum(axis=0)
-		#
-		#     # return X_parsed
-		#
-		# X_embedding = pool.map(single_embedding,X)
-		# pool.close()
-		# pool.join()
-		# return X_embedding
-
-		# X_parsed = np.empty((X.shape[0], stop - start, 1024))
-		# for index, i in enumerate(X):
-		#     residue_embedding = self.seqvec.embed_sentence(list(i[start:stop])).sum(axis=0)
-		#     X_parsed[index] = residue_embedding
 		X_trimmed = X[:, start:stop]
 		X_parsed = self.seqvec.embed_sentences(X_trimmed)
 		X_parsed = (np.array(list(X_parsed)).mean(axis=1))
@@ -60,8 +37,8 @@ class DataGenerator(keras.utils.Sequence):
 
 	def __init__(self, directory, classes=None, number_subsequences=32, dim=(32, 32, 32), n_channels=6,
 	             n_classes=10, shuffle=True, n_samples=None, seed=None, faster=True, online_training=False, repeat=True,
-	             use_spacer=False, randomrepeat=False, sequence_length=50, full_seq_embedding=False,final_set=True,
-	             include_raptorx_iupred=False,include_dict_scores=False,non_binary=False, **kwargs):
+	             use_spacer=False, randomrepeat=False, sequence_length=50, full_seq_embedding=False, final_set=True,
+	             include_raptorx_iupred=False, include_dict_scores=False, non_binary=False, **kwargs):
 		'Initialization'
 		self.directory = directory
 		self.classes = classes
@@ -80,7 +57,7 @@ class DataGenerator(keras.utils.Sequence):
 		self.full_seq_embedding = full_seq_embedding
 		self.final_set = final_set
 		self.include_raptorx_iupred = include_raptorx_iupred
-		self.include_dict_scores= include_dict_scores
+		self.include_dict_scores = include_dict_scores
 		self.non_binary = non_binary
 
 		if full_seq_embedding:
@@ -147,10 +124,6 @@ class DataGenerator(keras.utils.Sequence):
 
 		self.on_epoch_end()
 
-	# in images wird ein groesses arr classes gemacht (fuer alle sampels) darin stehen OHE die Class
-	# erstelle filename liste in der die zugehoerige file adresse steht
-	# laesst sich mergen mit version die oben verlinked
-
 	def __len__(self):
 		'Denotes the number of batches per epoch'
 		return int(np.floor(len(self.list_IDs) / self.number_samples_per_batch))
@@ -197,7 +170,6 @@ class DataGenerator(keras.utils.Sequence):
 	def __data_generation(self, list_IDs_temp, indexes):
 		'Generates data containing batch_size samples'  # X : (n_samples, *dim, n_channels)
 		# Initialization
-		# X = np.empty((self.batch_size, self.dim, self.n_channels),dtype='str')
 		X = np.empty((self.number_samples_per_batch), dtype=object)
 		Y = np.empty((self.number_samples_per_batch), dtype=int)
 		X_seq = np.empty((self.number_samples_per_batch), dtype=object)
@@ -215,7 +187,9 @@ class DataGenerator(keras.utils.Sequence):
 
 					elif self.include_dict_scores:
 						X[i] = np.array(pickle.load(open(os.path.join(self.directory, ID), "rb")))
-						X_seq[i] = pd.read_csv(os.path.join(self.directory, ID[:-4]+".csv"), delimiter='\t', dtype='str', header=None).values[0][0]
+						X_seq[i] = \
+						pd.read_csv(os.path.join(self.directory, ID[:-4] + ".csv"), delimiter='\t', dtype='str',
+						            header=None).values[0][0]
 
 					else:
 						if self.non_binary:
@@ -228,42 +202,27 @@ class DataGenerator(keras.utils.Sequence):
 			else:
 				if self.final_set:
 					if self.include_raptorx_iupred:
-						X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None).values[0]
-					# elif self.include_dict_scores:
-					# 	X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None).values[0]
+						X[i] = \
+						pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None).values[
+							0]
 					else:
 						if self.non_binary:
 							X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str',
 							                   header=None).values
 						else:
-							X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None).values[0][0]
-						# X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None).values[0][0].upper()
+							X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str',
+							                   header=None).values[0][0]
 				else:
-					X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None)[1].values[0]
-				# X[i] = np.array([list(j) for j in X_i])
-				# if len(X[i]) < self.dim:
-				# 	X[i] = "-" * self.dim
-				# 	sample_weight[i] = 0
-
+					X[i] = \
+					pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str', header=None)[1].values[0]
 			# Store class
 			Y[i] = self.labels[indexes[i]]
 
 		sample_weight = np.array([[i] * self.number_subsequences for i in sample_weight]).flatten()
-		# if self.maxLen == None:
-		# 	maxLen = self.number_subsequences * self.dim
-		# else:
-		# 	maxLen = self.maxLen
-		#
 		if self.include_raptorx_iupred:
 			samples_test = [i[1:] for i in X]
-			# different length
 			table_X, filtered = load_raptorx_iupred(samples_test)
 			X = np.array([i[0] for i in X])
-			# if len(filtered)>0:
-			# 	mask = np.ones(len(table_X))
-			# 	mask[filtered] = 0
-			# 	table_X = table_X[mask]
-			# 	X = X[mask]
 		elif self.include_dict_scores:
 			X = np.array([i[0] for i in X])
 			table_X = get_dict_scores(X_seq)
@@ -280,12 +239,12 @@ class DataGenerator(keras.utils.Sequence):
 				possible_postions = np.where(np.array(y_i) != "-")[0]
 				selection = np.random.permutation(possible_postions)
 				for selection_index, i in enumerate(selection):
-					if selection_index>=5:
+					if selection_index >= 5:
 						break
 					start = i - slicesize // 2
 					stop = start + slicesize
 					X_2.append(x_i[0][start:stop])
-					Y_2.append([1-float(y_i[i]),float(y_i[i])])
+					Y_2.append([1 - float(y_i[i]), float(y_i[i])])
 			X = np.array(X_2)
 			Y_2 = np.array(Y_2)
 			sample_weight = np.ones(len(Y_2))
@@ -299,35 +258,22 @@ class DataGenerator(keras.utils.Sequence):
 			start = math.floor(start_float)
 			stop = original_length - math.ceil(start_float)
 
-			# # amino = "GALMFWKQESPVICYHRNDTU"
-			# amino = "GALMFWKQESPVICYHRNDTUOBZX"
-			# encoder = LabelEncoder()
-			# encoder.fit(list(amino))
-			# X = parse_amino(x=[[i[start:stop]] for i in X], encoder=encoder)
 			X = np.array([list(j) for j in X])
 			X, mapping_X, slice_position = split_seq_n_times(X, self.sequence_length, self.number_subsequences)
 			X = self.elmo_embedder.elmo_embedding(X, start, stop)
 		else:
-			X, mapping_X, slice_position = split_embedding_seq_n_times(X, self.sequence_length, self.number_subsequences)
-		# X = seqvec.embed_sentence([i[start:stop] for i in X])
+			X, mapping_X, slice_position = split_embedding_seq_n_times(X, self.sequence_length,
+			                                                           self.number_subsequences)
 
-		# assert self.shrink_timesteps != True or self.online_training != True, "online_training shrinks automatically " \
-		#                                                                       "the files, please deactivate shrink_timesteps"
-
-		# if self.online_training:
-		#     X, Y = DataParsing.manipulate_training_data(X=X, Y=Y, subSeqLength=self.dim,
-		#                                                 number_subsequences=self.number_subsequences)
-		# elif self.shrink_timesteps:
-		#     X, Y, batchsize = DataParsing.shrink_timesteps(input_subSeqlength=self.dim, X=X, Y=Y)
 		if self.non_binary:
 			return X, Y_2, sample_weight
 		if self.include_raptorx_iupred:
-			table_sliced = np.empty((len(table_X),49,7))
+			table_sliced = np.empty((len(table_X), 49, 7))
 			for index, i in enumerate(slice_position):
-				if len(table_X[index])==49:
-					table_sliced[index]= table_X[index]
+				if len(table_X[index]) == 49:
+					table_sliced[index] = table_X[index]
 				else:
-					table_sliced[index] = table_X[index][i:i+49]
+					table_sliced[index] = table_X[index][i:i + 49]
 
 			X_dict = {}
 			X_dict.update({"seq_input": X})
@@ -382,7 +328,6 @@ def _count_valid_files_in_directory(directory, white_list_formats, split,
 def parse_amino(x, encoder):
 	out = []
 	for i in x:
-		# dnaSeq = i[1].upper()
 		dnaSeq = i[0].upper()
 		encoded_X = encoder.transform(list(dnaSeq))
 		out.append(encoded_X)
@@ -392,38 +337,38 @@ def parse_amino(x, encoder):
 def split_embedding_seq_n_times(embeddings, slicesize, amount_samples=10):
 	splited_em_seqs = []
 	mapping_slices_to_protein = []
-	slice_position =[]
+	slice_position = []
+
 	for index, protein in enumerate(embeddings):
 		if len(protein) < slicesize:
 			protein_pad = np.zeros((slicesize, 1024))
 			for i in range(0, len(protein)):
 				protein_pad[i] = protein[i]
 			protein = protein_pad
-		# for i in randsomsample(range(0, len(protein) - slicesize + 1), amount_samples):
 		for i in np.random.choice(len(protein) - slicesize + 1, amount_samples):
 			splited_em_seqs.append(protein[i:i + slicesize])
 			mapping_slices_to_protein.append(index)
 			slice_position.append(i)
-	# splited_em_seqs.append(splited_em_seq)
 	return np.array(splited_em_seqs), np.array(mapping_slices_to_protein), slice_position
+
 
 def split_seq_n_times(seqs, slicesize, amount_samples=10):
 	splited_em_seqs = []
 	mapping_slices_to_protein = []
 	slice_position = []
+
 	for index, protein in enumerate(seqs):
 		if len(protein) < slicesize:
-			protein_pad = ['-']*slicesize
+			protein_pad = ['-'] * slicesize
 			for i in range(0, len(protein)):
 				protein_pad[i] = protein[i]
 			protein = protein_pad
-		# for i in randsomsample(range(0, len(protein) - slicesize + 1), amount_samples):
 		for i in np.random.choice(len(protein) - slicesize + 1, amount_samples):
 			splited_em_seqs.append(protein[i:i + slicesize])
 			mapping_slices_to_protein.append(index)
 			slice_position.append(i)
-	# splited_em_seqs.append(splited_em_seq)
 	return np.array(splited_em_seqs), np.array(mapping_slices_to_protein), slice_position
+
 
 def load_raptorx_iupred(samples):
 	out = []
@@ -433,7 +378,6 @@ def load_raptorx_iupred(samples):
 		start = int(sample[0])
 		stop = int(sample[1])
 		file = sample[2]
-		# print(os.path.join("/home/le86qiz/Documents/Konrad/tool_comparison/raptorx/flo_files", f"{file}.csv"))
 		try:
 			table_numpy = pd.read_csv(
 				os.path.join("/home/le86qiz/Documents/Konrad/tool_comparison/raptorx/flo_files", f"{file}.csv"),
@@ -447,27 +391,26 @@ def load_raptorx_iupred(samples):
 			filtered.append(index)
 			print(f"not able to load {file}")
 			table_numpy_sliced = np.zeros((49, 7))
-		# table_numpy_sliced[0:7] = 0.33
-		# table_numpy_sliced[7] = 0.5
 
 		out.append(table_numpy_sliced)
 	return np.array(out), np.array(filtered)
 
+
 def get_dict_scores(seqs):
 	out_arr = []
 	for index_seq, seq in enumerate(seqs):
-		seq_arr = np.zeros((49,4))
+		seq_arr = np.zeros((49, 4))
 		for index, char in enumerate(seq):
 			char = char.upper()
-			# check value for char in dicts if char not in dict give value 0,5
-			hydro = hydrophilicity_scores.get(char,0.5)
-			beta = betaturn_scores.get(char,0.5)
-			surface = surface_accessibility_scores.get(char,0.5)
-			antigen = antigenicity_scores.get(char,0.5)
+			hydro = hydrophilicity_scores.get(char, 0.5)
+			beta = betaturn_scores.get(char, 0.5)
+			surface = surface_accessibility_scores.get(char, 0.5)
+			antigen = antigenicity_scores.get(char, 0.5)
 			features = np.array([hydro, beta, surface, antigen])
 			seq_arr[index] = features
 		out_arr.append(seq_arr)
 	return np.array(out_arr)
+
 
 def normalize_dict(in_dict):
 	"""
@@ -491,6 +434,7 @@ def normalize_dict(in_dict):
 		out_dict.update({keys[i]: values[i]})
 
 	return out_dict
+
 
 # hydrophilicity by parker
 hydrophilicity_scores = {'A': 2.1, 'C': 1.4, 'D': 10.0, 'E': 7.8, 'F': -9.2, 'G': 5.7, 'H': 2.1, 'I': -8.0, 'K': 5.7,

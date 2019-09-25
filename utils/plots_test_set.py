@@ -1,19 +1,16 @@
 import numpy as np
-from math import pi
 from bokeh.models import ColumnDataSource, Plot, LinearAxis, Grid, Range1d, Label, BoxAnnotation
 from bokeh.layouts import column
 from bokeh.models.glyphs import Text
 from bokeh.models import Legend
-#from bokeh.io import show
 from bokeh.plotting import figure, output_file, save
-import glob
 import pandas as pd
 import os
 import time
 
 epitope_threshold = 0.75
 deepipred_results_dir = f'/home/go96bix/projects/raw_data/non_binary_250_nodes_1000epochs_0.5_seqID/results'
-outdir = os.path.join(deepipred_results_dir,'plots2/')
+outdir = os.path.join(deepipred_results_dir, 'plots2/')
 starttime = time.time()
 
 ######## Plots #########
@@ -23,6 +20,8 @@ print('\nPlotting.')
 filecounter = 1
 printlen = 1
 total = 1000
+
+
 ########################
 class Protein_seq():
 	def __init__(self, sequence, score, over_threshold, positions=None):
@@ -30,9 +29,10 @@ class Protein_seq():
 		self.score = score
 		self.over_threshold = over_threshold
 		if positions == None:
-			self.positions = list(range(1,len(self.sequence)+1))
+			self.positions = list(range(1, len(self.sequence) + 1))
 		else:
 			self.positions = positions
+
 
 def readFasta_extended(file):
 	## read fasta file
@@ -52,46 +52,43 @@ def readFasta_extended(file):
 				values = line.split("\t")
 	return header, seq, values
 
-def frame_avg(values, frame_extend = 2):
+
+def frame_avg(values, frame_extend=2):
 	averages = []
 	protlen = len(values)
 	for pos in range(protlen):
 		framelist = []
-		for shift in range(-frame_extend,frame_extend+1,1):
-			if not (pos+shift) < 0 and not (pos+shift) > (protlen -1):
-				framelist.append(float(values[pos+shift]))
-		averages.append(sum(framelist)/len(framelist))
+		for shift in range(-frame_extend, frame_extend + 1, 1):
+			if not (pos + shift) < 0 and not (pos + shift) > (protlen - 1):
+				framelist.append(float(values[pos + shift]))
+		averages.append(sum(framelist) / len(framelist))
 	return averages
+
 
 holydict = {}
 
-for root, dirs, files in os.walk(os.path.join(deepipred_results_dir,"deepipred/"), topdown=False):
-	# for file in glob.glob("/home/go96bix/projects/raw_data/non_binary_250_nodes_1000epochs/results/deepipred/*.csv"):
+for root, dirs, files in os.walk(os.path.join(deepipred_results_dir, "deepipred/"), topdown=False):
 	for name in files:
-		# print(os.path.join(root, name))
 		file = os.path.join(root, name)
-		df = pd.read_csv(file,sep='\t',index_col=False)
-		# print(df)
-		# print(df.values[:,0])
-		letter_arr = df.values[:,0]
-		value_arr = np.array(df.values[:,1],dtype=np.float)
-	
+		df = pd.read_csv(file, sep='\t', index_col=False)
+		letter_arr = df.values[:, 0]
+		value_arr = np.array(df.values[:, 1], dtype=np.float)
+
 		score_bool = value_arr > epitope_threshold
 		protein = Protein_seq(sequence="".join(letter_arr), score=value_arr, over_threshold=score_bool)
 		holydict.update({name[:-(len(".csv"))]: protein})
-		
+
 for geneid in holydict:
 
 	############### progress ###############
-	elapsed_time = time.strftime("%H:%M:%S", time.gmtime(time.time()-starttime))
+	elapsed_time = time.strftime("%H:%M:%S", time.gmtime(time.time() - starttime))
 	printstring = f'Plotting: {geneid}    File: {filecounter} / {total}   Elapsed time: {elapsed_time}'
 	if len(printstring) < printlen:
-		print(' '*printlen, end='\r')
+		print(' ' * printlen, end='\r')
 	print(printstring, end='\r')
 	printlen = len(printstring)
 	filecounter += 1
 	#######################################
-
 
 	# make output dir and create output filename
 	if not os.path.exists(outdir + '/plots'):
@@ -105,49 +102,42 @@ for geneid in holydict:
 	flag = holydict[geneid].over_threshold
 	# pwa_score = pwa(score, frame_extend = 24)
 	protlen = len(seq)
-	# hyrophilicity_parker_score = frame_avg(hyrophilicity_parker[geneid], frame_extend = 10)
-
 
 	# create a new plot with a title and axis labels
-	p = figure(title=geneid, y_range = (-0.03,1.03), y_axis_label='Scores',plot_width=1200,plot_height=460,tools='xpan,xwheel_zoom,reset', toolbar_location='above')
+	p = figure(title=geneid, y_range=(-0.03, 1.03), y_axis_label='Scores', plot_width=1200, plot_height=460,
+	           tools='xpan,xwheel_zoom,reset', toolbar_location='above')
 	p.min_border_left = 80
 
 	# add a line renderer with legend and line thickness
-	l1 = p.line(range(1,protlen+1), score, line_width=1,color='black', visible = True)
-	l2 = p.line(range(1,protlen+1), ([epitope_threshold] * protlen), line_width=1,color='red', visible = True)
-#	l10 = p.line(range(1,protlen+1), pwa_score, line_width=1,color='darkgreen', visible = False)
-#	l12 = p.line(range(1,protlen+1), hyrophilicity_parker_score, line_width=1,color='black', visible = False)
+	l1 = p.line(range(1, protlen + 1), score, line_width=1, color='black', visible=True)
+	l2 = p.line(range(1, protlen + 1), ([epitope_threshold] * protlen), line_width=1, color='red', visible=True)
 
-	#legend = Legend(items=[('DeEpiPred',[l1]), ('epitope_threshold',[l2]) ] )
-	legend = Legend(items=[('DeEpiPred',[l1]),
-	('epitope_threshold',[l2]) ])
-#	('pwa_score',[l10]),
-#	('hydrophilicity by parker', [l12]) ] )	# aa k-mer score and pwm
+	legend = Legend(items=[('DeEpiPred', [l1]),
+	                       ('epitope_threshold', [l2])])
 
-	p.add_layout(legend,'right')
-#	p.legend.orientation = 'vertical'
-#	p.legend.location = 'right'
+	p.add_layout(legend, 'right')
 	p.xaxis.visible = False
-	p.legend.click_policy="hide"
+	p.legend.click_policy = "hide"
 
-	p.x_range.bounds = (-50, protlen+51)
+	p.x_range.bounds = (-50, protlen + 51)
 
 	### plot for sequence
 	# symbol based plot stuff
 
-	plot = Plot(title=None, x_range=p.x_range, y_range=Range1d(0,9), plot_width=1200, plot_height=50, min_border=0, toolbar_location=None)
+	plot = Plot(title=None, x_range=p.x_range, y_range=Range1d(0, 9), plot_width=1200, plot_height=50, min_border=0,
+	            toolbar_location=None)
 
-	y = [1]*protlen
+	y = [1] * protlen
 	source = ColumnDataSource(dict(x=list(pos), y=y, text=list(seq)))
 	glyph = Text(x="x", y="y", text="text", text_color='black', text_font_size='8pt')
 	plot.add_glyph(source, glyph)
-	label = Label(x=-80,y=y[1],x_units='screen',y_units='data',text = 'Sequence', render_mode='css', background_fill_color='white',background_fill_alpha=1.0)
+	label = Label(x=-80, y=y[1], x_units='screen', y_units='data', text='Sequence', render_mode='css',
+	              background_fill_color='white', background_fill_alpha=1.0)
 	plot.add_layout(label)
 
 	xaxis = LinearAxis()
 	plot.add_layout(xaxis, 'below')
 	plot.add_layout(Grid(dimension=0, ticker=xaxis.ticker))
-
 
 	# add predicted epitope boxes
 	predicted_epitopes = []
@@ -161,45 +151,35 @@ for geneid in holydict:
 			else:
 				if stop > start:
 					predicted_epitopes.append((start, stop))
-				start=pred_pos[i]
-				stop=pred_pos[i]
-		predicted_epitopes.append((start,stop))
+				start = pred_pos[i]
+				stop = pred_pos[i]
+		predicted_epitopes.append((start, stop))
 	# print(predicted_epitopes)
 
 	for prediction in predicted_epitopes:
 		start = prediction[0]
 		stop = prediction[1]
-		y = np.array([-0.02]*protlen)
-		y[start:stop] = 1.02
-		# non_epitope = [-0.02] * (start - 1) + [1.02] * (stop-start) + [-0.02] * ((protlen - (start-1) - (stop-start)))
-		# print(non_epitope)
-		# p.vbar(x = list(pos), bottom = -0.02, top = non_epitope, width = 1, alpha = 0.2, line_alpha = 0, color = 'darkgreen', legend = 'predicted_epitopes', visible = True)
-		p.vbar(x = list(pos), bottom = -0.02, top = y, width = 1, alpha = 0.2, line_alpha = 0, color = 'darkgreen', legend = 'predicted_epitopes', visible = True)
-
-	# add known epitope boxes
-	header, seq, values = readFasta_extended(f'/home/go96bix/projects/raw_data/bepipred_proteins_with_marking/{geneid}.fasta')
-	for head in header:
-		file_name = head.split("_")
-		start, stop = int(file_name[2])+1, int(file_name[3])+1
 		y = np.array([-0.02] * protlen)
 		y[start:stop] = 1.02
-		# epitope = [-0.02] * (start - 1) + [1.02] * (stop-start) + [-0.02] * ((protlen - (start-1) - (stop-start)))
+		p.vbar(x=list(pos), bottom=-0.02, top=y, width=1, alpha=0.2, line_alpha=0, color='darkgreen',
+		       legend='predicted_epitopes', visible=True)
+
+	# add known epitope boxes
+	header, seq, values = readFasta_extended(
+		f'/home/go96bix/projects/raw_data/bepipred_proteins_with_marking/{geneid}.fasta')
+	for head in header:
+		file_name = head.split("_")
+		start, stop = int(file_name[2]) + 1, int(file_name[3]) + 1
+		y = np.array([-0.02] * protlen)
+		y[start:stop] = 1.02
 		if file_name[0].startswith("Negative"):
-			p.vbar(x = list(pos), bottom = -0.02, top = y, width = 1, alpha = 0.2, line_alpha = 0, color = 'darkred', legend = 'provided_non_epitope', visible = False)
+			p.vbar(x=list(pos), bottom=-0.02, top=y, width=1, alpha=0.2, line_alpha=0, color='darkred',
+			       legend='provided_non_epitope', visible=False)
 		else:
-			p.vbar(x = list(pos), bottom = -0.02, top = y, width = 1, alpha = 0.2, line_alpha = 0, color = 'blue', legend = 'provided_epitope', visible = False)
-#				output_file(f'{outdir}/plots/{geneid}_epi.html') # adds _epi suffix to outfile if a supplied epitope was provided
+			p.vbar(x=list(pos), bottom=-0.02, top=y, width=1, alpha=0.2, line_alpha=0, color='blue',
+			       legend='provided_epitope', visible=False)
 
-	# # add non-epitope boxes
-	# if nonepitopes:
-	# 	for epi in nonepitopes:
-	# 		if seq.find(epi) > -1:
-	# 			start = seq.find(epi) + 1
-	# 			end = start + len(epi) + 1
-	# 			non_epitope = [-0.02] * (start - 1) + [1.02] * len(epi) + [-0.02] * ((protlen - (start-1) - len(epi)))
-	# 			p.vbar(x = list(pos), bottom = -0.02, top = non_epitope, width = 1, alpha = 0.2, line_alpha = 0, color = 'darkred', legend = 'provided_non_epitope', visible = False)
-
-	save(column(p,plot))
+	save(column(p, plot))
 '''
 	# DeepLoc barplot
 	deeploclocations = ['Membrane','Nucleus','Cytoplasm','Extracellular','Mitochondrion','Cell_membrane','Endoplasmic_reticulum','Plastid','Golgi_apparatus','Lysosome/Vacuole','Peroxisome']
@@ -211,4 +191,3 @@ for geneid in holydict:
 
 	save(column(p,plot,deepplot))
 '''
-
