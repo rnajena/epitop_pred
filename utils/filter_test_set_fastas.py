@@ -17,7 +17,7 @@ def readFasta_extended(file):
 	return header, seq, values
 
 
-testfiletable = '/home/go96bix/projects/epitop_pred/data_generator_bepipred_non_binary_0.5_seqID/samples_for_ROC.csv'
+testfiletable = '/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.5_seqID/samples_for_ROC.csv'
 # testfiletable = '/home/le86qiz/Documents/Konrad/tool_comparison/comparison3/samples_for_ROC.csv'
 testproteinIDs = []
 with open(testfiletable) as infile:
@@ -25,7 +25,7 @@ with open(testfiletable) as infile:
 		file = line.strip().rsplit('/', 1)[1]
 		testproteinIDs.append(file[:-6])
 
-out_path = "/home/go96bix/projects/raw_data/bepipred_sequences_test_non_binary_0.5_seqID.fasta"
+out_path = "/home/go96bix/projects/raw_data/bepipred_sequences_test_binary_0.5_seqID_newEmbedding.fasta"
 with open(out_path, "a") as outfile:
 	for testid in testproteinIDs:
 		file = f'/home/le86qiz/Documents/Konrad/tool_comparison/comparison3/bepipred_proteins_with_marking/{testid}.fasta'

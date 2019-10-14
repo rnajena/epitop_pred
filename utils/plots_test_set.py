@@ -9,7 +9,7 @@ import os
 import time
 
 epitope_threshold = 0.75
-deepipred_results_dir = f'/home/go96bix/projects/raw_data/non_binary_250_nodes_1000epochs_0.5_seqID/results'
+deepipred_results_dir = f'/home/go96bix/projects/raw_data/binary_25_nodes_100_epochs_08DO_0.5_seqID_newEmbedding/results/'
 outdir = os.path.join(deepipred_results_dir, 'plots2/')
 starttime = time.time()
 

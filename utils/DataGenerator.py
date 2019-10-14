@@ -25,10 +25,23 @@ class Elmo_embedder():
 		self.options = self.model_dir + options
 		self.seqvec = ElmoEmbedder(self.options, self.weights, cuda_device=-1)
 
-	def elmo_embedding(self, X, start, stop):
-		X_trimmed = X[:, start:stop]
-		X_parsed = self.seqvec.embed_sentences(X_trimmed)
-		X_parsed = (np.array(list(X_parsed)).mean(axis=1))
+	def elmo_embedding(self, X, start=None, stop=None):
+		assert start != None and stop != None, "deprecated to use start stop, please trim seqs beforehand"
+
+		# X_trimmed = X[:, start:stop]
+		# X_parsed = self.seqvec.embed_sentences(X_trimmed)
+		# X_parsed = (np.array(list(X_parsed)).mean(axis=1))
+		# return X_parsed
+		if type(X[0]) == str:
+			np.array([list(i.upper()) for i in X])
+		X_parsed = []
+		# X.sort(key=len)
+		embedding = self.seqvec.embed_sentences(X)
+		for i in embedding:
+			print(i.shape)
+			X_parsed.append(np.array(i).sum(axis=0))
+			print(X_parsed[-1].shape)
+
 		return X_parsed
 
 
@@ -207,6 +220,7 @@ class DataGenerator(keras.utils.Sequence):
 							0]
 					else:
 						if self.non_binary:
+							print(os.path.join(self.directory, ID))
 							X[i] = pd.read_csv(os.path.join(self.directory, ID), delimiter='\t', dtype='str',
 							                   header=None).values
 						else:

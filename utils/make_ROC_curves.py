@@ -13,10 +13,10 @@ from sklearn import metrics
 from sklearn.metrics import precision_recall_curve
 import os
 
-deepipred_results_dir = f'/home/go96bix/projects/raw_data/non_binary_250_nodes_1000epochs/results'
+deepipred_results_dir = f'/home/go96bix/projects/raw_data/binary_25_nodes_100_epochs_08DO_0.5_seqID_new/results/'
 
 # read test file table
-testfiletable = '/home/go96bix/projects/epitop_pred/data_generator_bepipred_non_binary/samples_for_ROC.csv'
+testfiletable = '/home/go96bix/projects/epitop_pred/with_errors/data_generator_bepipred_binary_0.5_seqID/samples_for_ROC.csv'
 # testfiletable = '/home/le86qiz/Documents/Konrad/tool_comparison/comparison3/samples_for_ROC.csv'
 testproteinIDs = []
 with open(testfiletable) as infile:
@@ -179,8 +179,10 @@ for testid in testproteinIDs:
 	for startstop in startstop_epi.get(testid, []):
 		start = startstop[0]
 		stop = startstop[1]
-		scores = deepipred_table[start:stop]
-		score = sum(scores) / len(scores)
+		score = deepipred_table[(start+stop)//2]
+		print(score)
+		# scores = deepipred_table[start:stop]
+		# score = sum(scores) / len(scores)
 		deepipred_scores.append(score)
 		deepipred_flag.append(1)
 	for startstop in startstop_nonepi.get(testid, []):

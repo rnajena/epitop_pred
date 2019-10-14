@@ -23,13 +23,13 @@ import pickle
 from sklearn.utils import class_weight as clw
 import sklearn.metrics as metrics
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, accuracy_score, roc_auc_score
 from scipy.optimize import minimize
 from keras import backend as K
 import math
-from sklearn.metrics import roc_auc_score
 from keras.engine import Layer
 import tensorflow_hub as hub
+from scipy import interp
 
 
 class ElmoEmbeddingLayer(Layer):
@@ -67,9 +67,29 @@ def set_trainability(model, trainable=False):
 
 def auc_10_perc_fpr(y_true, y_pred):
 	def my_roc_auc_score(y_true_np, y_pred_np, max_fpr=0.1):
+		y_true_np = np.append(y_true_np, np.array([1,1])-y_true_np[0])
+		y_pred_np = np.append(y_pred_np, np.array([1,1])-y_true_np[0])
 		return roc_auc_score(y_true_np, y_pred_np, max_fpr=max_fpr)
 
 	return tf.py_func(my_roc_auc_score, (y_true, y_pred), tf.double)
+
+def auc_10_perc_fpr_binary(y_true, y_pred):
+	def my_roc_auc_score(y_true_np, y_pred_np, max_fpr=0.1):
+		y_true_np = np.append(y_true_np, np.array([1,1])-y_true_np[0])
+		y_pred_np = np.append(y_pred_np, np.array([1,1])-y_true_np[0])
+		y_bin = np.array(y_true_np >= 0.5, np.int)
+		return roc_auc_score(y_bin, y_pred_np, max_fpr=max_fpr)
+
+	return tf.py_func(my_roc_auc_score, (y_true, y_pred), tf.double)
+
+def accuracy_binary(y_true, y_pred):
+	def my_acc_score(y_true_np, y_pred_np):
+		y_true_bin = np.array(y_true_np >= 0.5, np.int)
+		y_pred_bin = np.array(y_pred_np >= 0.5, np.int)
+		acc = accuracy_score(y_true_bin, y_pred_bin)
+		return acc
+
+	return tf.py_func(my_acc_score, (y_true, y_pred), tf.double)
 
 
 def calc_n_plot_ROC_curve(y_true, y_pred, name="best", plot=True):
@@ -83,6 +103,7 @@ def calc_n_plot_ROC_curve(y_true, y_pred, name="best", plot=True):
 	tnr = 1 - fpr
 	optimal_threshold = thresholds[optimal_idx]
 	print(optimal_threshold)
+	print(len(fpr))
 	if plot:
 		plt.plot(fpr, tpr, label=f'ROC curve {name.replace("_", " ")} (area = {auc:0.2f})')
 		plt.scatter(fpr[optimal_idx], tpr[optimal_idx], c="green")
@@ -175,7 +196,7 @@ antigenicity_scores = normalize_dict(antigenicity_scores)
 
 
 def load_data(complex, directory, val_size=0.3, generator=False, sequence_length=50, full_seq_embedding=False,
-              final_set=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False):
+              final_set=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False, own_embedding=False):
 	def load_raptorx_iupred(samples):
 		out = []
 		shift = 20
@@ -219,7 +240,8 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 	if full_seq_embedding:
 		Y_train_old = pd.read_csv(directory + '/Y_train.csv', delimiter='\t', dtype='str', header=None).values
 		Y_test_old = pd.read_csv(directory + '/Y_test.csv', delimiter='\t', dtype='str', header=None).values
-		X_train_old = []
+		X_train_old = np.array(pickle.load(open(directory + '/X_train.pkl', "rb")))
+		# X_train_old = []
 		X_test_old = np.array(pickle.load(open(directory + '/X_test.pkl', "rb")))
 
 		try:
@@ -269,7 +291,14 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 				X_test = X_test_old
 				X_val = X_val_old
 			else:
-				X_train = X_train_old
+				protein_mapping = {}
+				train_val_proteins = np.append(X_train_old[:,3],X_val_old[:, 3])
+				train_val_proteins = np.append(train_val_proteins, X_test_old[:, 3])
+				for index, i in enumerate(np.unique(train_val_proteins)):
+					protein_mapping[index] = np.where(train_val_proteins == i)
+
+				X_train = np.stack(X_train_old[:, 0])
+				# X_train = X_train_old
 				X_test = np.stack(X_test_old[:, 0])
 				X_val = np.stack(X_val_old[:, 0])
 		else:
@@ -286,7 +315,15 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 			Y_train, y_encoder = DataParsing.encode_string(y=Y_train_old[:, 0])
 			Y_test = DataParsing.encode_string(y=Y_test_old[:, 0], y_encoder=y_encoder)
 			Y_val = DataParsing.encode_string(y=Y_val_old[:, 0], y_encoder=y_encoder)
-		return X_train, X_val, X_test, Y_train, Y_val, Y_test, None
+
+		# original_length = 49
+		# start_float = (original_length - sequence_length) / 2
+		# start = math.floor(start_float)
+		# stop = original_length - math.ceil(start_float)
+		# X_test = X_test[:,start:stop]
+		# X_train = X_train[:,start:stop]
+		# X_val = X_val[:,start:stop]
+		return X_train, X_val, X_test, Y_train, Y_val, Y_test, None, protein_mapping
 
 	if not complex:
 		Y_train_old = pd.read_csv(directory + '/Y_train.csv', delimiter='\t', dtype='str', header=None).values
@@ -337,12 +374,18 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 				Y_test = DataParsing.encode_string(y=Y_test_old, y_encoder=y_encoder)
 				Y_val = DataParsing.encode_string(y=Y_val_old, y_encoder=y_encoder)
 
-				return X_train, X_val, X_test, Y_train, Y_val, Y_test, None
+				return X_train, X_val, X_test, Y_train, Y_val, Y_test, None, None
 
 			elif include_dict_scores:
 				pass
 
 			else:
+				protein_mapping = {}
+				train_val_proteins = np.append(X_train_old[:,3],X_val_old[:, 3])
+				train_val_proteins = np.append(train_val_proteins, X_test_old[:, 3])
+				for index, i in enumerate(np.unique(train_val_proteins)):
+					protein_mapping[index] = np.where(train_val_proteins == i)
+
 				X_train_old = X_train_old[:, 0]
 				X_test_old = X_test_old[:, 0]
 				X_val_old = X_val_old[:, 0]
@@ -358,13 +401,24 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 		start_float = (original_length - sequence_length) / 2
 		start = math.floor(start_float)
 		stop = original_length - math.ceil(start_float)
+
 		if not generator:
-			elmo_embedder = DataGenerator.Elmo_embedder()
-			X_train = elmo_embedder.elmo_embedding(X_train_old[:, 1], start, stop)
-			print(X_train.shape)
-			X_test = elmo_embedder.elmo_embedding(X_test_old[:, 1], start, stop)
-			X_val = elmo_embedder.elmo_embedding(X_val_old[:, 1], start, stop)
-			print(X_val.shape)
+			if own_embedding:
+				amino = "ABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+				encoder = LabelEncoder()
+				encoder.fit(list(amino))
+				# print(np.unique(np.array([list(i.upper()) for i in X_train_old]).flatten()))
+				X_train = np.array(list(map(encoder.transform, np.array([list(i.upper()) for i in X_train_old]))))
+				# print(X_train)
+				X_test = np.array(list(map(encoder.transform,  np.array([list(i.upper()) for i in X_test_old]))))
+				X_val = np.array(list(map(encoder.transform,  np.array([list(i.upper()) for i in X_val_old]))))
+			else:
+				elmo_embedder = DataGenerator.Elmo_embedder()
+				X_train = elmo_embedder.elmo_embedding(X_train_old[:, 1], start, stop)
+				print(X_train.shape)
+				X_test = elmo_embedder.elmo_embedding(X_test_old[:, 1], start, stop)
+				X_val = elmo_embedder.elmo_embedding(X_val_old[:, 1], start, stop)
+				print(X_val.shape)
 
 		else:
 			elmo_embedder = DataGenerator.Elmo_embedder()
@@ -440,36 +494,94 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 		Y_test = to_categorical(np.array(Y_test_old[:, 0], dtype=np.float))
 		Y_val = to_categorical(np.array(Y_val_old[:, 0], dtype=np.float))
 	else:
-		Y_train, y_encoder = DataParsing.encode_string(y=Y_train_old[:, 1])
-		Y_test = DataParsing.encode_string(y=Y_test_old[:, 1], y_encoder=y_encoder)
-		Y_val = DataParsing.encode_string(y=Y_val_old[:, 1], y_encoder=y_encoder)
+		if own_embedding:
+			Y_train, y_encoder = DataParsing.encode_string(y=Y_train_old)
+			Y_test = DataParsing.encode_string(y=Y_test_old, y_encoder=y_encoder)
+			Y_val = DataParsing.encode_string(y=Y_val_old, y_encoder=y_encoder)
+		else:
+			Y_train, y_encoder = DataParsing.encode_string(y=Y_train_old[:, 1])
+			Y_test = DataParsing.encode_string(y=Y_test_old[:, 1], y_encoder=y_encoder)
+			Y_val = DataParsing.encode_string(y=Y_val_old[:, 1], y_encoder=y_encoder)
 
-	return X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test
+	return X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test, protein_mapping
 
 
-def build_model(nodes, dropout, seq_length, weight_decay_lstm=1e-6, weight_decay_dense=1e-3, non_binary=False):
-	inputs = layers.Input(shape=(seq_length, 1024))
-	hidden = layers.Bidirectional(
-		layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-		            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(inputs)
-	hidden = layers.Bidirectional(
-		layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
+def build_model(nodes, dropout, seq_length, weight_decay_lstm=1e-6, weight_decay_dense=1e-3, non_binary=False, own_embedding=False, both_embeddings=False):
+	if own_embedding:
+		inputs = layers.Input(shape=(seq_length,))
+		seq_input = layers.Embedding(27, 10, input_length=seq_length)(inputs)
+		hidden = layers.Bidirectional(
+			layers.LSTM(nodes, return_sequences=True, dropout=dropout,
+			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
+		hidden = layers.Bidirectional(
+			layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
+
+	elif both_embeddings:
+		embedding_input=layers.Input(shape=(seq_length, 1024))
+		left = layers.Bidirectional(
+			layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
+			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(embedding_input)
+		left = layers.Dense(nodes)(left)
+		left = layers.LeakyReLU(alpha=0.01)(left)
+		out_left = layers.Flatten()(left)
+		big_model = models.Model(embedding_input, out_left)
+
+		seq_input = layers.Input(shape=(seq_length,))
+		right = layers.Embedding(27, 10, input_length=seq_length)(seq_input)
+		right = layers.Bidirectional(
+			layers.LSTM(nodes, return_sequences=True, dropout=dropout,
+			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
+		right = layers.Dense(nodes)(right)
+		right = layers.LeakyReLU(alpha=0.01)(right)
+		out_right = layers.Flatten()(right)
+		small_model = models.Model(seq_input, out_right)
+
+		hidden = layers.concatenate([big_model(embedding_input),small_model(seq_input)])
+
+	else:
+		inputs = layers.Input(shape=(seq_length, 1024))
+		hidden = layers.Bidirectional(
+			layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
+			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(inputs)
+		hidden = layers.Bidirectional(
+			layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
+
+	# hidden = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(
+	# 	inputs)
+	# hidden = layers.LeakyReLU(alpha=0.01)(hidden)
+	# hidden = layers.Flatten()(hidden)
 	hidden = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(
 		hidden)
+
 	hidden = layers.LeakyReLU(alpha=0.01)(hidden)
 
 	out = layers.Dense(2, activation='softmax', kernel_regularizer=l2(weight_decay_dense),
 	                   bias_regularizer=l2(weight_decay_dense))(hidden)
-	model = models.Model(inputs=inputs, outputs=out)
-
-	if non_binary:
-		model.compile(optimizer='adam', loss='binary_crossentropy', metrics=[])
+	if both_embeddings:
+		model = models.Model(inputs=[embedding_input,seq_input], outputs=out)
 	else:
-		model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+		model = models.Model(inputs=inputs, outputs=out)
+
+	adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+	if non_binary:
+		model.compile(optimizer="adam", loss='binary_crossentropy', metrics=[accuracy_binary, auc_10_perc_fpr_binary])
+	else:
+		if both_embeddings:
+			set_trainability(big_model, False)
+			small_model.compile(optimizer="adam", loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			big_model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			model.summary()
+			return model, small_model, big_model
+		model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 	model.summary()
-	return model
+	return model, None, None
 
 
 def build_complex_model(nodes, dropout, seq_length=19, vector_dim=1, table_columns=0):
@@ -1080,33 +1192,51 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
                   voting=False, tensorboard=False, gpus=False, titel='', x_axes='', y_axes='', accuracy=False,
                   loss=False, runtime=False, label1='', label2='', label3='', label4='', cross_val=True,
                   modular_training=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False,
-                  **kwargs):
+                  own_embedding=False, both_embeddings=False, **kwargs):
 	# SAVE SETTINGS
 	with open(path + '/' + suffix + "_config.txt", "w") as file:
 		for i in list(locals().items()):
 			file.write(str(i) + '\n')
 
-	X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test = load_data(complex_model, path, val_size=0.2,
+	X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test, protein_mapping = load_data(complex_model, path, val_size=0.2,
 	                                                                       generator=use_generator,
 	                                                                       non_binary=non_binary,
 	                                                                       sequence_length=sequence_length,
 	                                                                       full_seq_embedding=full_seq_embedding,
 	                                                                       include_raptorx_iupred=include_raptorx_iupred,
-	                                                                       include_dict_scores=include_dict_scores)
+	                                                                       include_dict_scores=include_dict_scores,
+	                                                                       own_embedding=own_embedding)
+	# X_test_2 = X_val.copy()
+	# Y_test_2 = Y_val.copy()
+	# X_val = X_test.copy()
+	# Y_val = Y_test.copy()
+	# X_test = X_test_2
+	# Y_test = Y_test_2
+
 	filepath = path + "/weights.best.acc." + suffix + ".hdf5"
 	filepath2 = path + "/weights.best.loss." + suffix + ".hdf5"
 	filepath2_model = path + "/weights.best.loss." + suffix + "_complete_model.hdf5"
 	filepath3 = path + "/weights.best.auc10." + suffix + ".hdf5"
 	checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True,
 	                             mode='max')
+	# checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy_binary', verbose=1, save_best_only=True, save_weights_only=True,
+	#                              mode='max')
+	# checkpoint = EarlyStopping('val_loss', min_delta=0, patience=epochs//10, restore_best_weights=True)
+
 	checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
 	                              save_weights_only=True, mode='min')
-	checkpoint2_model = ModelCheckpoint(filepath2_model, monitor='val_loss', verbose=1, save_best_only=True,
-	                                    save_weights_only=False, mode='min')
+	# checkpoint2_model = ModelCheckpoint(filepath2_model, monitor='val_loss', verbose=1, save_best_only=True,
+	#                                     save_weights_only=False, mode='min')
 	checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1, save_best_only=True,
-	                              save_weights_only=True, mode='max')
-	tensorboard = TensorBoard(f'./tensorboard_log_dir')
-	callbacks_list = [checkpoint, checkpoint2, checkpoint2_model, checkpoint3, tensorboard]
+								  save_weights_only=True, mode='max')
+	# checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr_binary', verbose=1, save_best_only=True,
+	# 							  save_weights_only=True, mode='max')
+
+	# tensorboard = TensorBoard(f'./tensorboard_log_dir')
+	# checkpoint2 = ModelCheckpoint(filepath2, monitor='loss', verbose=1, save_best_only=True,
+	#                               save_weights_only=True, mode='min')
+	# callbacks_list = [checkpoint2]
+	callbacks_list = [checkpoint, checkpoint2, checkpoint3]
 
 	if not complex_model:
 		if include_raptorx_iupred:
@@ -1120,7 +1250,7 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 				if col_num == 1:
 					inputs_val.update({"aux_input": X_val.table})
-					inputs_val.update({"aux_input": X_val.table})
+					inputs_test.update({"aux_input": X_test.table})
 		elif include_dict_scores:
 			model, Seq_model, Table_model = build_model_with_table(nodes, dropout, seq_length=sequence_length)
 			inputs_val = {}
@@ -1132,9 +1262,9 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 				if col_num == 1:
 					inputs_val.update({"aux_input": X_val.table})
-					inputs_val.update({"aux_input": X_val.table})
+					inputs_test.update({"aux_input": X_test.table})
 		else:
-			model = build_model(nodes, dropout, seq_length=sequence_length, non_binary=non_binary)  # X_train.shape[1])
+			model = build_model(nodes, dropout, seq_length=sequence_length, non_binary=non_binary, own_embedding=own_embedding, both_embeddings=both_embeddings)  # X_train.shape[1])
 		if use_generator:
 			if include_raptorx_iupred or include_dict_scores:
 				params = {"number_subsequences": 1, "dim": X_test.sequences.shape[1],
@@ -1152,9 +1282,7 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 			                                                 include_raptorx_iupred=include_raptorx_iupred,
 			                                                 include_dict_scores=include_dict_scores,
 			                                                 **params, **kwargs)
-			model.fit_generator(generator=training_generator, epochs=epochs, callbacks=callbacks_list,
-			                    validation_data=(X_val, Y_val),
-			                    shuffle=shuffleTraining, verbose=1)
+
 			if include_raptorx_iupred or include_dict_scores:
 				model.fit_generator(generator=training_generator, epochs=epochs, callbacks=callbacks_list,
 				                    validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
@@ -1190,58 +1318,195 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 				model.fit_generator(generator=training_generator, epochs=5, callbacks=callbacks_list,
 				                    validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
 				                    verbose=1)
+			else:
+				model.fit_generator(generator=training_generator, epochs=epochs, callbacks=callbacks_list,
+				                    validation_data=(X_val, Y_val),
+				                    shuffle=shuffleTraining, verbose=1)
 
 			model.save_weights(path + "/weights.last_model." + suffix + ".hdf5")
 
 		else:
-
+			join_train_test_val= True
+			protein_list = list(protein_mapping.keys())
 			# define 10-fold cross validation test harness
 			kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=1337)
 			cvscores = []
-			X = X_train
-			Y = Y_train
-
 			if cross_val:
-				for train, test in kfold.split(X, np.argmax(Y, axis=1)):
-					checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
-					                             save_weights_only=True, mode='max')
-					checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-					                              save_weights_only=True, mode='min')
-					checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1,
-					                              save_best_only=True, save_weights_only=True, mode='max')
-					if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
-						tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
-					tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
-					callbacks_list = [checkpoint, checkpoint2, checkpoint3, tensorboard]
+				if join_train_test_val:
 
-					K.clear_session()
-					del model
+					if both_embeddings:
+						X_train_seq, X_val_seq, X_test_seq, Y_train, Y_val, Y_test, pos_y_test, protein_mapping = load_data(
+							complex_model, path, val_size=0.2,
+							generator=use_generator,
+							non_binary=non_binary,
+							sequence_length=sequence_length,
+							full_seq_embedding=False,
+							include_raptorx_iupred=include_raptorx_iupred,
+							include_dict_scores=include_dict_scores,
+							own_embedding=True)
+						X_seq = np.append(X_train_seq, X_val_seq, axis=0)
+						X_seq = np.append(X_seq, X_test_seq, axis=0)
+						del X_train_seq, X_val_seq, X_test_seq
+					# inputs_train ={}
+					# inputs_train.update({"seq_input": X_seq, "embedding_input": X})
 
-					model = build_model(nodes, dropout, seq_length=sequence_length)
-					model.fit(X[train], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
-					          validation_data=(X_val, Y_val),
-					          callbacks=callbacks_list, shuffle=shuffleTraining)
-					scores = model.evaluate(X[test], Y[test], verbose=0)
-					print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
-					cvscores.append(scores[1] * 100)
+					X = np.append(X_train, X_val, axis=0)
+					del X_train, X_val
+					X = np.append(X, X_test, axis=0)
+					del X_test
+					Y = np.append(Y_train, Y_val, axis=0)
+					Y = np.append(Y, Y_test, axis=0)
 
-					model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
-					# if real val_set exists, use models with lowest val_loss as models in ensemble
-					os.rename(filepath,
-					          f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
-					os.rename(filepath2,
-					          f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
-					os.rename(filepath3,
-					          f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+					n_proteins = np.zeros(len(protein_list))
 
-				print("summary")
-				print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+					tprs = []
+					aucs = []
+					mean_fpr = np.linspace(0, 1, 100)
 
-				validate_cross_val_models(model, path, X_test, X_val, Y_test, Y_val)
+					for train, test in kfold.split(protein_list, n_proteins):
+						checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
+						                             save_weights_only=True, mode='max')
+						checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+						                              save_weights_only=True, mode='min')
+						checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1,
+						                              save_best_only=True, save_weights_only=True, mode='max')
+						if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
+							tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
+						tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
+						callbacks_list = [checkpoint, checkpoint2, checkpoint3, tensorboard]
+
+						K.clear_session()
+						del model
+
+						model, small_model, big_model = build_model(nodes, dropout, seq_length=sequence_length, own_embedding=own_embedding, both_embeddings=both_embeddings)
+
+						train = [k for i in train for j in protein_mapping[i] for k in j]
+						test = [k for i in test for j in protein_mapping[i] for k in j]
+						assert len(test) == len(np.unique(test)), "duplicates found in k_fold test split"
+						if both_embeddings:
+							model.fit([X[train],X_seq[train]], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
+							          validation_data=([X[test], X_seq[test]], Y[test]),
+							          callbacks=callbacks_list, shuffle=shuffleTraining)
+
+							# model.load_weights(filepath3)
+							adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
+												   amsgrad=False)
+							set_trainability(big_model, True)
+							big_model.compile(optimizer="adam", loss='binary_crossentropy')
+							set_trainability(small_model, False)
+							set_trainability(model, True)
+
+							small_model.compile(optimizer="adam", loss='binary_crossentropy')
+							model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+
+							model.fit([X[train], X_seq[train]], Y[train], epochs=10, batch_size=batch_size, verbose=2,
+									  validation_data=([X[test], X_seq[test]], Y[test]),
+									  callbacks=callbacks_list, shuffle=shuffleTraining)
+
+						else:
+							model.fit(X[train], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
+							          validation_data=(X[test], Y[test]),
+							          callbacks=callbacks_list, shuffle=shuffleTraining)
+						if both_embeddings:
+							scores = model.evaluate([X[test], X_seq[test]], Y[test], verbose=0, batch_size=batch_size)
+						else:
+							scores = model.evaluate(X[test], Y[test], verbose=0, batch_size=batch_size)
+						print("%s: %.4f" % (model.metrics_names[2], scores[2]))
+						cvscores.append(scores[2])
+
+						model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						os.rename(filepath,
+						          f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						os.rename(filepath2,
+						          f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						os.rename(filepath3,
+						          f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+
+						# Compute ROC curve and area the curve
+						if both_embeddings:
+							pred = model.predict([X[test], X_seq[test]])
+						else:
+							pred = model.predict(X[test])
+						fpr, tpr, thresholds = metrics.roc_curve(Y[:, 1][test], pred[:, 1])
+						tprs.append(interp(mean_fpr, fpr, tpr))
+						tprs[-1][0] = 0.0
+						roc_auc = metrics.auc(fpr, tpr)
+						aucs.append(roc_auc)
+						plt.plot(fpr, tpr, lw=1, alpha=0.3,
+						         label='ROC fold %d (AUC = %0.2f)' % (len(cvscores), roc_auc))
+
+					mean_tpr = np.mean(tprs, axis=0)
+					mean_tpr[-1] = 1.0
+					mean_auc = metrics.auc(mean_fpr, mean_tpr)
+					std_auc = np.std(aucs)
+
+					std_tpr = np.std(tprs, axis=0)
+					tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
+					tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
+					plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color='grey', alpha=.2,
+					                 label=r'$\pm$ 1 std. dev.')
+
+					plt.plot(mean_fpr, mean_tpr, color='b',
+					         label=r'Mean ROC (AUC = %0.2f $\pm$ %0.2f)' % (mean_auc, std_auc),
+					         lw=2, alpha=.8)
+					plt.plot([0, 1], [0, 1], 'k--', lw=2)
+					plt.xlim([0.0, 1.0])
+					plt.ylim([0.0, 1.05])
+					plt.xlabel('False Positive Rate')
+					plt.ylabel('True Positive Rate')
+					plt.title('Receiver operating characteristic for multiple classes')
+					plt.legend(loc="lower right")
+					plt.savefig(directory + f"/roc_curve_{suffix}_ensemble.pdf")
+					plt.close()
+
+					print("%.4f (+/- %.4f)" % (np.mean(cvscores), np.std(cvscores)))
+				else:
+					X = X_train
+					Y = Y_train
+
+					for train, test in kfold.split(X, np.argmax(Y, axis=1)):
+						checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
+						                             save_weights_only=True, mode='max')
+						checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+						                              save_weights_only=True, mode='min')
+						checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1,
+						                              save_best_only=True, save_weights_only=True, mode='max')
+						if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
+							tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
+						tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
+						callbacks_list = [checkpoint, checkpoint2, checkpoint3, tensorboard]
+
+						K.clear_session()
+						del model
+
+						model = build_model(nodes, dropout, seq_length=sequence_length, own_embedding=own_embedding)
+
+						model.fit(X[train], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
+						          validation_data=(X_val, Y_val),
+						          callbacks=callbacks_list, shuffle=shuffleTraining)
+						scores = model.evaluate(X[test], Y[test], verbose=0)
+						scores = model.evaluate(X[test], Y[test], verbose=0, batch_size=batch_size)
+
+						print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
+						cvscores.append(scores[1] * 100)
+
+						model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						# if real val_set exists, use models with lowest val_loss as models in ensemble
+						os.rename(filepath,
+						          f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						os.rename(filepath2,
+						          f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+						os.rename(filepath3,
+						          f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+
+						print("summary")
+					print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
+
+					validate_cross_val_models(model, path, X_test, X_val, Y_test, Y_val)
 
 			else:
 				model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size, validation_data=(X_val, Y_val),
-				          verbose=2, callbacks=callbacks_list, shuffle=shuffleTraining)
+				          verbose=1, callbacks=callbacks_list, shuffle=shuffleTraining)
 	else:
 		class_weight = clw.compute_class_weight('balanced', np.unique(np.argmax(Y_train, axis=1)),
 		                                        np.argmax(Y_train, axis=1))
@@ -1412,6 +1677,7 @@ def calculate_weighted_accuracy(prediction_weights, preds, preds_val, nb_classes
 
 	yPred = np.argmax(weighted_predictions, axis=1)
 	yTrue = np.argmax(Y, axis=-1)
+	yTrue_val = np.argmax(Y_val, axis=-1)
 	accuracy = metrics.accuracy_score(yTrue, yPred) * 100
 	error = 100 - accuracy
 
@@ -1419,10 +1685,10 @@ def calculate_weighted_accuracy(prediction_weights, preds, preds_val, nb_classes
 		# plot histogram of predictions
 		yPred_0 = weighted_predictions[:, 1][yTrue == 0]
 		yPred_1 = weighted_predictions[:, 1][yTrue == 1]
-		yPred_total = np.array([yPred_0, yPred_1])
+		yPred_total = [yPred_0, yPred_1]
 		import matplotlib.pyplot as plt
 
-		plt.hist(yPred_total.swapaxes(0, 1), bins=20, range=(0, 1), stacked=False, label=['no Epitope', 'true Epitope'])
+		plt.hist(yPred_total, bins=20, range=(0, 1), stacked=False, label=['no Epitope', 'true Epitope'])
 		plt.legend()
 		plt.savefig(directory + f"/{name}.png")
 		plt.close()
@@ -1432,8 +1698,8 @@ def calculate_weighted_accuracy(prediction_weights, preds, preds_val, nb_classes
 		for weight, prediction in zip(prediction_weights, preds_val):
 			weighted_predictions_val += weight * np.array(prediction)
 
-		cutoff = calc_n_plot_ROC_curve(y_true=Y_val[:, 1], y_pred=weighted_predictions_val[:, 1], name=name, plot=False)
-		calc_n_plot_ROC_curve(y_true=Y[:, 1], y_pred=weighted_predictions[:, 1], name=name)
+		cutoff = calc_n_plot_ROC_curve(y_true=yTrue_val, y_pred=weighted_predictions_val[:, 1], name=name, plot=False)
+		calc_n_plot_ROC_curve(y_true=yTrue, y_pred=weighted_predictions[:, 1], name=name)
 		table = pd.crosstab(
 			pd.Series(yTrue),
 			pd.Series(yPred),
@@ -1543,17 +1809,23 @@ acc = []
 std_div = []
 
 if __name__ == "__main__":
-	directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_non_binary_0.9_seqID"
-	suffix = "250_nodes_with_decay_global_1000epochs"
+	directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.5_seqID"
+	# directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.8_seqID_checked_output"
+	# directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_allProteins"
+	suffix = "both_embeddings_small_big_approach_keep_learning_long"
 	complex_model = False
-	nodes = 250
+	nodes = 10
 	dropout = 0.4
 	sequence_length = 49
 	full_seq_embedding = True
 	include_raptorx_iupred = False
 	include_dict_scores = False
-	non_binary = True
+	non_binary = False
+	own_embedding = False
+	both_embeddings = True
+	if both_embeddings:
+		own_embedding=False
 	test_and_plot(path=directory, suffix=suffix, complex_model=complex_model, nodes=nodes, dropout=dropout,
-	              epochs=1000, use_generator=True, batch_size=64, sequence_length=sequence_length, cross_val=False,
+	              epochs=50, use_generator=False, batch_size=640, sequence_length=sequence_length, cross_val=True,
 	              full_seq_embedding=full_seq_embedding, include_raptorx_iupred=include_raptorx_iupred,
-	              include_dict_scores=include_dict_scores, non_binary=non_binary)
+	              include_dict_scores=include_dict_scores, non_binary=non_binary, own_embedding=own_embedding, both_embeddings=both_embeddings)

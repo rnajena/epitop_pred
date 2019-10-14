@@ -43,7 +43,9 @@ use_circular_filling = False
 big_set = True
 
 cwd = "/home/go96bix/projects/epitop_pred"
-directory = os.path.join(cwd, "data_generator_bepipred_final")
+directory = os.path.join(cwd, "data_generator_NON_clustered")
+if not os.path.exists(directory):
+	os.makedirs(directory)
 
 elmo_embedder = DataGenerator.Elmo_embedder()
 

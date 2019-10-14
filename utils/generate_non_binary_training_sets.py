@@ -39,7 +39,7 @@ use_circular_filling = False
 big_set = True
 
 cwd = "/home/go96bix/projects/epitop_pred"
-directory = os.path.join(cwd, "data_generator_bepipred_non_binary_0.9_seqID")
+directory = os.path.join(cwd, "data_generator_bepipred_NON_binary_0.5_seqID")
 if not os.path.isdir(directory):
 	os.makedirs(directory)
 
@@ -50,7 +50,7 @@ epitope_arr_global = []
 
 protein_arr = []
 
-for file in glob.glob("/home/go96bix/projects/raw_data/bepipred_proteins_with_marking_0.9_seqID/*.fasta"):
+for file in glob.glob("/home/go96bix/projects/raw_data/bepipred_proteins_with_marking_0.5_seqID/*.fasta"):
 	header, seq_local, values = readFasta_extended(file)
 
 	seq_local = seq_local.lower()
@@ -77,7 +77,7 @@ for file in glob.glob("/home/go96bix/projects/raw_data/bepipred_proteins_with_ma
 		else:
 			print(seq_local)
 			sample_embedding = elmo_embedder.seqvec.embed_sentence(seq_local)
-			sample_embedding = sample_embedding.mean(axis=0)
+			# sample_embedding = sample_embedding.mean(axis=0)
 			seq_global = sample_embedding
 
 		protein_pad_global = np.zeros((seq_len + (shift * 2), 1024), dtype=np.float32)
@@ -174,12 +174,13 @@ for index, arr in enumerate(epitope_arr_local):
 					do_val = False
 					samples = 0
 					break
-	Y_str = "\t".join(epitope_arr_local[index][1])
-	X_train_local.append([epitope_arr_local[index][0], Y_str])
-	if global_embedding_bool:
-		X_train_global.append([epitope_arr_global[index][0], Y_str])
+	else:
+		Y_str = "\t".join(epitope_arr_local[index][1])
+		X_train_local.append([epitope_arr_local[index][0], Y_str])
+		if global_embedding_bool:
+			X_train_global.append([epitope_arr_global[index][0], Y_str])
 
-	Y_train.append(epitope_arr_local[index][1])
+		Y_train.append(epitope_arr_local[index][1])
 
 directory2 = directory + f"/train/all/"
 if not os.path.exists(directory2):
