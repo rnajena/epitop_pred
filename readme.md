@@ -1,5 +1,8 @@
 ## EpiDope creation space
 
+This repo contains most of the code used to create https://github.com/flomock/EpiDope.  
+See also our paper https://doi.org/10.1093/bioinformatics/btaa773.
+
 We have numerous scripts with specific niche functionality. Therefore, we expect that most of the scripts are not of high interest for most users. 
 Because of this, we only rudimentarily polished most of the code and do not guaranty it's functionality.
 
