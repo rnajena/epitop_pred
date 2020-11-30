@@ -9,11 +9,10 @@ from sklearn.model_selection import train_test_split
 import sys
 from keras.utils import plot_model
 from keras.regularizers import l2
-from utils import DataGenerator
+from utils import DataGenerator, DataParsing
 import tensorflow as tf
 
 sys.path.insert(0, '/home/go96bix/projects/Masterarbeit/ML')
-import DataParsing
 import matplotlib
 
 matplotlib.rcParams['backend'] = 'Agg'
@@ -28,35 +27,35 @@ from scipy.optimize import minimize
 from keras import backend as K
 import math
 from keras.engine import Layer
-import tensorflow_hub as hub
+# import tensorflow_hub as hub
 from scipy import interp
 
 
-class ElmoEmbeddingLayer(Layer):
-	def __init__(self, **kwargs):
-		self.dimensions = 1024
-		self.trainable = True
-		super(ElmoEmbeddingLayer, self).__init__(**kwargs)
-
-	def build(self, input_shape):
-		self.elmo = hub.Module('https://tfhub.dev/google/elmo/2', trainable=self.trainable,
-		                       name="{}_module".format(self.name))
-
-		self.trainable_weights += K.tf.trainable_variables(scope="^{}_module/.*".format(self.name))
-		super(ElmoEmbeddingLayer, self).build(input_shape)
-
-	def call(self, x, mask=None):
-		result = self.elmo(K.squeeze(K.cast(x, tf.string), axis=1),
-		                   as_dict=True,
-		                   signature='default',
-		                   )['default']
-		return result
-
-	def compute_mask(self, inputs, mask=None):
-		return K.not_equal(inputs, '--PAD--')
-
-	def compute_output_shape(self, input_shape):
-		return (input_shape[0], self.dimensions)
+# class ElmoEmbeddingLayer(Layer):
+# 	def __init__(self, **kwargs):
+# 		self.dimensions = 1024
+# 		self.trainable = True
+# 		super(ElmoEmbeddingLayer, self).__init__(**kwargs)
+#
+# 	def build(self, input_shape):
+# 		self.elmo = hub.Module('https://tfhub.dev/google/elmo/2', trainable=self.trainable,
+# 		                       name="{}_module".format(self.name))
+#
+# 		self.trainable_weights += K.tf.trainable_variables(scope="^{}_module/.*".format(self.name))
+# 		super(ElmoEmbeddingLayer, self).build(input_shape)
+#
+# 	def call(self, x, mask=None):
+# 		result = self.elmo(K.squeeze(K.cast(x, tf.string), axis=1),
+# 		                   as_dict=True,
+# 		                   signature='default',
+# 		                   )['default']
+# 		return result
+#
+# 	def compute_mask(self, inputs, mask=None):
+# 		return K.not_equal(inputs, '--PAD--')
+#
+# 	def compute_output_shape(self, input_shape):
+# 		return (input_shape[0], self.dimensions)
 
 
 def set_trainability(model, trainable=False):
@@ -67,20 +66,22 @@ def set_trainability(model, trainable=False):
 
 def auc_10_perc_fpr(y_true, y_pred):
 	def my_roc_auc_score(y_true_np, y_pred_np, max_fpr=0.1):
-		y_true_np = np.append(y_true_np, np.array([1,1])-y_true_np[0])
-		y_pred_np = np.append(y_pred_np, np.array([1,1])-y_true_np[0])
+		y_true_np = np.append(y_true_np, np.array([1, 1]) - y_true_np[0])
+		y_pred_np = np.append(y_pred_np, np.array([1, 1]) - y_true_np[0])
 		return roc_auc_score(y_true_np, y_pred_np, max_fpr=max_fpr)
 
 	return tf.py_func(my_roc_auc_score, (y_true, y_pred), tf.double)
 
+
 def auc_10_perc_fpr_binary(y_true, y_pred):
 	def my_roc_auc_score(y_true_np, y_pred_np, max_fpr=0.1):
-		y_true_np = np.append(y_true_np, np.array([1,1])-y_true_np[0])
-		y_pred_np = np.append(y_pred_np, np.array([1,1])-y_true_np[0])
+		y_true_np = np.append(y_true_np, np.array([1, 1]) - y_true_np[0])
+		y_pred_np = np.append(y_pred_np, np.array([1, 1]) - y_true_np[0])
 		y_bin = np.array(y_true_np >= 0.5, np.int)
 		return roc_auc_score(y_bin, y_pred_np, max_fpr=max_fpr)
 
 	return tf.py_func(my_roc_auc_score, (y_true, y_pred), tf.double)
+
 
 def accuracy_binary(y_true, y_pred):
 	def my_acc_score(y_true_np, y_pred_np):
@@ -145,20 +146,20 @@ def parse_amino(x, generator):
 
 # hydrophilicity by parker
 hydrophilicity_scores = {'A': 2.1, 'C': 1.4, 'D': 10.0, 'E': 7.8, 'F': -9.2, 'G': 5.7, 'H': 2.1, 'I': -8.0, 'K': 5.7,
-                         'L': -9.2, 'M': -4.2, 'N': 7.0, 'P': 2.1, 'Q': 6.0, 'R': 4.2, 'S': 6.5, 'T': 5.2, 'V': -3.7,
-                         'W': -10.0, 'Y': -1.9}
+						 'L': -9.2, 'M': -4.2, 'N': 7.0, 'P': 2.1, 'Q': 6.0, 'R': 4.2, 'S': 6.5, 'T': 5.2, 'V': -3.7,
+						 'W': -10.0, 'Y': -1.9}
 # Chou Fasman beta turn prediction (avg = 1)
 betaturn_scores = {'A': 0.66, 'C': 1.19, 'D': 1.46, 'E': 0.74, 'F': 0.6, 'G': 1.56, 'H': 0.95, 'I': 0.47, 'K': 1.01,
-                   'L': 0.59, 'M': 0.6, 'N': 1.56, 'P': 1.52, 'Q': 0.98, 'R': 0.95, 'S': 1.43, 'T': 0.96, 'V': 0.5,
-                   'W': 0.96, 'Y': 1.14}
+				   'L': 0.59, 'M': 0.6, 'N': 1.56, 'P': 1.52, 'Q': 0.98, 'R': 0.95, 'S': 1.43, 'T': 0.96, 'V': 0.5,
+				   'W': 0.96, 'Y': 1.14}
 # Emini surface accessibility scale (avg = 0.62)
 surface_accessibility_scores = {'A': 0.49, 'C': 0.26, 'D': 0.81, 'E': 0.84, 'F': 0.42, 'G': 0.48, 'H': 0.66, 'I': 0.34,
-                                'K': 0.97, 'L': 0.4, 'M': 0.48, 'N': 0.78, 'P': 0.75, 'Q': 0.84, 'R': 0.95, 'S': 0.65,
-                                'T': 0.7, 'V': 0.36, 'W': 0.51, 'Y': 0.76}
+								'K': 0.97, 'L': 0.4, 'M': 0.48, 'N': 0.78, 'P': 0.75, 'Q': 0.84, 'R': 0.95, 'S': 0.65,
+								'T': 0.7, 'V': 0.36, 'W': 0.51, 'Y': 0.76}
 # Kolaskar and Tongaokar antigenicity scale (avg = 1.0)
 antigenicity_scores = {'A': 1.064, 'C': 1.412, 'D': 0.866, 'E': 0.851, 'F': 1.091, 'G': 0.874, 'H': 1.105, 'I': 1.152,
-                       'K': 0.93, 'L': 1.25, 'M': 0.826, 'N': 0.776, 'P': 1.064, 'Q': 1.015, 'R': 0.873, 'S': 1.012,
-                       'T': 0.909, 'V': 1.383, 'W': 0.893, 'Y': 1.161}
+					   'K': 0.93, 'L': 1.25, 'M': 0.826, 'N': 0.776, 'P': 1.064, 'Q': 1.015, 'R': 0.873, 'S': 1.012,
+					   'T': 0.909, 'V': 1.383, 'W': 0.893, 'Y': 1.161}
 
 
 def normalize_dict(in_dict):
@@ -196,7 +197,8 @@ antigenicity_scores = normalize_dict(antigenicity_scores)
 
 
 def load_data(complex, directory, val_size=0.3, generator=False, sequence_length=50, full_seq_embedding=False,
-              final_set=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False, own_embedding=False):
+			  final_set=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False,
+			  own_embedding=False):
 	def load_raptorx_iupred(samples):
 		out = []
 		shift = 20
@@ -252,21 +254,21 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 			assert generator == False, "if generator is in use, don't great validation set from train, this would lead to overfitting of the validation set"
 			print("create validation set from train")
 			X_train_old, X_val_old, Y_train_old, Y_val_old = train_test_split(X_train_old, Y_train_old,
-			                                                                  test_size=val_size,
-			                                                                  shuffle=True)
+																			  test_size=val_size,
+																			  shuffle=True)
 		if final_set:
 			if include_raptorx_iupred:
 				samples_test = np.array([i[1:] for i in X_test_old])
 				table_test = load_raptorx_iupred(samples_test)
 				sequences_test = np.array([i[0] for i in X_test_old])
 				X_test = X_Data(sequences=sequences_test,
-				                table=table_test)
+								table=table_test)
 
 				samples_val = np.array([i[1:] for i in X_val_old])
 				table_val = load_raptorx_iupred(samples_val)
 				sequences_val = np.array([i[0] for i in X_val_old])
 				X_val = X_Data(sequences=sequences_val,
-				               table=table_val)
+							   table=table_val)
 				X_train = X_train_old
 
 			elif include_dict_scores:
@@ -282,9 +284,9 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 				X_val = np.stack(X_val_old[:, 0])
 
 				X_test = X_Data(sequences=X_test,
-				                table=table_test)
+								table=table_test)
 				X_val = X_Data(sequences=X_val,
-				               table=table_val)
+							   table=table_val)
 
 			elif non_binary:
 				X_train = X_train_old
@@ -292,10 +294,10 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 				X_val = X_val_old
 			else:
 				protein_mapping = {}
-				train_val_proteins = np.append(X_train_old[:,3],X_val_old[:, 3])
+				train_val_proteins = np.append(X_train_old[:, 3], X_val_old[:, 3])
 				train_val_proteins = np.append(train_val_proteins, X_test_old[:, 3])
 				for index, i in enumerate(np.unique(train_val_proteins)):
-					protein_mapping[index] = np.where(train_val_proteins == i)
+					protein_mapping[index] = (i, np.where(train_val_proteins == i)[0])
 
 				X_train = np.stack(X_train_old[:, 0])
 				# X_train = X_train_old
@@ -339,7 +341,7 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 			assert generator == False, "if generator is in use, don't great validation set from train, this would lead to overfitting of the validation set"
 			print("create validation set from train")
 			X_train_old, X_val_old, Y_train_old, Y_val_old = train_test_split(X_train_old, Y_train_old,
-			                                                                  test_size=val_size, random_state=42)
+																			  test_size=val_size, random_state=42)
 
 		if final_set:
 			if include_raptorx_iupred:
@@ -381,10 +383,10 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 
 			else:
 				protein_mapping = {}
-				train_val_proteins = np.append(X_train_old[:,3],X_val_old[:, 3])
+				train_val_proteins = np.append(X_train_old[:, 3], X_val_old[:, 3])
 				train_val_proteins = np.append(train_val_proteins, X_test_old[:, 3])
 				for index, i in enumerate(np.unique(train_val_proteins)):
-					protein_mapping[index] = np.where(train_val_proteins == i)
+					protein_mapping[index] = (i, np.where(train_val_proteins == i)[0])
 
 				X_train_old = X_train_old[:, 0]
 				X_test_old = X_test_old[:, 0]
@@ -410,8 +412,8 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 				# print(np.unique(np.array([list(i.upper()) for i in X_train_old]).flatten()))
 				X_train = np.array(list(map(encoder.transform, np.array([list(i.upper()) for i in X_train_old]))))
 				# print(X_train)
-				X_test = np.array(list(map(encoder.transform,  np.array([list(i.upper()) for i in X_test_old]))))
-				X_val = np.array(list(map(encoder.transform,  np.array([list(i.upper()) for i in X_val_old]))))
+				X_test = np.array(list(map(encoder.transform, np.array([list(i.upper()) for i in X_test_old]))))
+				X_val = np.array(list(map(encoder.transform, np.array([list(i.upper()) for i in X_val_old]))))
 			else:
 				elmo_embedder = DataGenerator.Elmo_embedder()
 				X_train = elmo_embedder.elmo_embedding(X_train_old[:, 1], start, stop)
@@ -450,8 +452,8 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 			assert generator == False, "if generator is in use, don't great validation set from train, this would lead to overfitting of the validation set"
 			print("create validation set from train")
 			X_train_old, X_val_old, Y_train_old, Y_val_old = train_test_split(X_train_old, Y_train_old,
-			                                                                  test_size=val_size,
-			                                                                  shuffle=True)
+																			  test_size=val_size,
+																			  shuffle=True)
 		original_length = 50
 		start_float = (original_length - sequence_length) / 2
 		start = math.floor(start_float)
@@ -469,11 +471,11 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 		elmo_embedder.elmo_embedding(X_test_old_seq, start, stop)
 		print("embedding")
 		X_train = X_Data(sequences=elmo_embedder.elmo_embedding(X_train_old_seq, start, stop),
-		                 table=X_train_old[:, sequence_length:])
+						 table=X_train_old[:, sequence_length:])
 		X_test = X_Data(sequences=elmo_embedder.elmo_embedding(X_test_old_seq, start, stop),
-		                table=X_test_old[:, sequence_length:])
+						table=X_test_old[:, sequence_length:])
 		X_val = X_Data(sequences=elmo_embedder.elmo_embedding(X_val_old_seq, start, stop),
-		               table=X_val_old[:, sequence_length:])
+					   table=X_val_old[:, sequence_length:])
 
 		pos_y_test = Y_test_old[:, 1:]
 
@@ -506,51 +508,54 @@ def load_data(complex, directory, val_size=0.3, generator=False, sequence_length
 	return X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test, protein_mapping
 
 
-def build_model(nodes, dropout, seq_length, weight_decay_lstm=1e-6, weight_decay_dense=1e-3, non_binary=False, own_embedding=False, both_embeddings=False):
+def build_model(nodes, dropout, seq_length, weight_decay_lstm=1e-6, weight_decay_dense=1e-3, non_binary=False,
+				own_embedding=False, both_embeddings=False):
 	if own_embedding:
 		inputs = layers.Input(shape=(seq_length,))
 		seq_input = layers.Embedding(27, 10, input_length=seq_length)(inputs)
 		hidden = layers.Bidirectional(
 			layers.LSTM(nodes, return_sequences=True, dropout=dropout,
-			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
+						recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
 		hidden = layers.Bidirectional(
 			layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
 
 	elif both_embeddings:
-		embedding_input=layers.Input(shape=(seq_length, 1024))
+		embedding_input = layers.Input(shape=(seq_length, 1024))
 		left = layers.Bidirectional(
 			layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(embedding_input)
+						recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(
+			embedding_input)
 		left = layers.Dense(nodes)(left)
 		left = layers.LeakyReLU(alpha=0.01)(left)
 		out_left = layers.Flatten()(left)
-		big_model = models.Model(embedding_input, out_left)
+		# big_model = models.Model(embedding_input, out_left)
 
 		seq_input = layers.Input(shape=(seq_length,))
 		right = layers.Embedding(27, 10, input_length=seq_length)(seq_input)
 		right = layers.Bidirectional(
 			layers.LSTM(nodes, return_sequences=True, dropout=dropout,
-			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
+						recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
 		right = layers.Dense(nodes)(right)
 		right = layers.LeakyReLU(alpha=0.01)(right)
 		out_right = layers.Flatten()(right)
-		small_model = models.Model(seq_input, out_right)
+		# small_model = models.Model(seq_input, out_right)
 
-		hidden = layers.concatenate([big_model(embedding_input),small_model(seq_input)])
+		# hidden = layers.concatenate([big_model(embedding_input),small_model(seq_input)])
+		hidden = layers.concatenate([out_left, out_right])
 
 	else:
 		inputs = layers.Input(shape=(seq_length, 1024))
 		hidden = layers.Bidirectional(
 			layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-			            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(inputs)
+						recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(inputs)
 		hidden = layers.Bidirectional(
 			layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-			            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
+						recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(hidden)
 
 	# hidden = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(
 	# 	inputs)
@@ -562,23 +567,27 @@ def build_model(nodes, dropout, seq_length, weight_decay_lstm=1e-6, weight_decay
 	hidden = layers.LeakyReLU(alpha=0.01)(hidden)
 
 	out = layers.Dense(2, activation='softmax', kernel_regularizer=l2(weight_decay_dense),
-	                   bias_regularizer=l2(weight_decay_dense))(hidden)
+					   bias_regularizer=l2(weight_decay_dense))(hidden)
 	if both_embeddings:
-		model = models.Model(inputs=[embedding_input,seq_input], outputs=out)
+		model = models.Model(inputs=[embedding_input, seq_input], outputs=out)
 	else:
 		model = models.Model(inputs=inputs, outputs=out)
 
 	adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
+	nadam = optimizers.Nadam(lr=0.00002, beta_1=0.9, beta_2=0.999)
 	if non_binary:
 		model.compile(optimizer="adam", loss='binary_crossentropy', metrics=[accuracy_binary, auc_10_perc_fpr_binary])
 	else:
 		if both_embeddings:
-			set_trainability(big_model, False)
-			small_model.compile(optimizer="adam", loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
-			big_model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			# set_trainability(big_model, False)
+			# small_model.compile(optimizer="adam", loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			# big_model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 			model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+			# model.compile(optimizer=nadam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+
 			model.summary()
-			return model, small_model, big_model
+			return model, None, None
+		# return model, small_model, big_model
 		model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 	model.summary()
 	return model, None, None
@@ -643,9 +652,9 @@ def acc_with_cutoffs(Y_true, Y_pred, cutoffs):
 
 
 def compare_quality(model, path, X_test, Y_test, X_val, Y_val, pos_y_test, complex_model=False,
-                    include_raptorx_iupred=False):
+					include_raptorx_iupred=False):
 	def calc_quality(model, X_test, Y_test, X_val, Y_val, pos_y_test, complex_model=False, path=False, middle_name="",
-	                 include_raptorx_iupred=False):
+					 include_raptorx_iupred=False):
 		if path:
 			print("load model:")
 			print(model_path)
@@ -665,8 +674,8 @@ def compare_quality(model, path, X_test, Y_test, X_val, Y_val, pos_y_test, compl
 		print(f"error {error}")
 
 		accuracy, error = calculate_weighted_accuracy([1], [pred], [pred_val], 2,
-		                                              Y=Y_test, Y_val=Y_val,
-		                                              ROC=True, name=f"{middle_name}")
+													  Y=Y_test, Y_val=Y_val,
+													  ROC=True, name=f"{middle_name}")
 
 	def calc_acc_with_cutoff(name="best"):
 		if complex_model:
@@ -696,14 +705,14 @@ def compare_quality(model, path, X_test, Y_test, X_val, Y_val, pos_y_test, compl
 
 	# last weights
 	calc_quality(model, X_test, Y_test, X_val, Y_val, pos_y_test, complex_model, path=False,
-	             middle_name=f"last_model_{suffix}",
-	             include_raptorx_iupred=include_raptorx_iupred)
+				 middle_name=f"last_model_{suffix}",
+				 include_raptorx_iupred=include_raptorx_iupred)
 	if path:
 		for middle_name in ("loss", "acc", "auc10"):
 			model_path = f"{path}/weights.best.{middle_name}.{suffix}.hdf5"
 
 			calc_quality(model, X_test, Y_test, X_val, Y_val, pos_y_test, complex_model, path=path,
-			             middle_name=f"{middle_name}_{suffix}", include_raptorx_iupred=include_raptorx_iupred)
+						 middle_name=f"{middle_name}_{suffix}", include_raptorx_iupred=include_raptorx_iupred)
 
 
 def build_multi_length_model(nodes, dropout):
@@ -741,27 +750,27 @@ def build_multi_length_model(nodes, dropout):
 	return model
 
 
-def build_elmo_embedding_model():
-	import tensorflow as tf
-	import tensorflow_hub as hub
-	elmo = hub.Module("/home/go96bix/projects/deep_eve/elmo", trainable=False)
-
-	def ELMoEmbedding(x):
-		return elmo(tf.squeeze(tf.cast(x, tf.string)), signature="default", as_dict=True)["default"]
-
-	input_text = layers.Input(shape=(1,), dtype="string")
-	embedding = layers.Lambda(ELMoEmbedding, output_shape=(1024,))(input_text)
+# def build_elmo_embedding_model():
+# 	import tensorflow as tf
+# 	import tensorflow_hub as hub
+# 	elmo = hub.Module("/home/go96bix/projects/deep_eve/elmo", trainable=False)
+#
+# 	def ELMoEmbedding(x):
+# 		return elmo(tf.squeeze(tf.cast(x, tf.string)), signature="default", as_dict=True)["default"]
+#
+# 	input_text = layers.Input(shape=(1,), dtype="string")
+# 	embedding = layers.Lambda(ELMoEmbedding, output_shape=(1024,))(input_text)
 
 
 def build_model_with_raptorx_iupred(nodes, dropout, seq_length=50, weight_decay_lstm=0, weight_decay_dense=0):
 	seq_input = layers.Input(shape=(seq_length, 1024), name="seq_input")
 	left = layers.Bidirectional(
 		layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-		            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
+					recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
 	left = layers.Bidirectional(
 		layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(left)
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(left)
 	left = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(left)
 	out_left = layers.LeakyReLU(alpha=0.01)(left)
 	Seq_model = models.Model(seq_input, out_left)
@@ -769,12 +778,12 @@ def build_model_with_raptorx_iupred(nodes, dropout, seq_length=50, weight_decay_
 	auxiliary_input = layers.Input(shape=(seq_length, 7), dtype='float', name='aux_input')
 	right = layers.Bidirectional(
 		layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-		            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(
+					recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(
 		auxiliary_input)
 	right = layers.Bidirectional(
 		layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
 	right = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(
 		right)
 	out_right = layers.LeakyReLU(alpha=0.01)(right)
@@ -798,11 +807,11 @@ def build_model_with_table(nodes, dropout, seq_length=50, weight_decay_lstm=0, w
 	seq_input = layers.Input(shape=(seq_length, 1024), name="seq_input")
 	left = layers.Bidirectional(
 		layers.LSTM(nodes, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-		            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
+					recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(seq_input)
 	left = layers.Bidirectional(
 		layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(left)
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(left)
 	left = layers.Dense(nodes, kernel_regularizer=l2(weight_decay_dense), bias_regularizer=l2(weight_decay_dense))(left)
 	out_left = layers.LeakyReLU(alpha=0.01)(left)
 	Seq_model = models.Model(seq_input, out_left)
@@ -810,14 +819,14 @@ def build_model_with_table(nodes, dropout, seq_length=50, weight_decay_lstm=0, w
 	auxiliary_input = layers.Input(shape=(seq_length, 4), dtype='float', name='aux_input')
 	right = layers.Bidirectional(
 		layers.LSTM(nodes // 2, input_shape=(seq_length, 1024), return_sequences=True, dropout=dropout,
-		            recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(
+					recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(
 		auxiliary_input)
 	right = layers.Bidirectional(
 		layers.LSTM(nodes // 2, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay_lstm),
-		            recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
+					recurrent_regularizer=l2(weight_decay_lstm), bias_regularizer=l2(weight_decay_lstm)))(right)
 	right = layers.Dense(nodes // 2, kernel_regularizer=l2(weight_decay_dense),
-	                     bias_regularizer=l2(weight_decay_dense))(
+						 bias_regularizer=l2(weight_decay_dense))(
 		right)
 	out_right = layers.LeakyReLU(alpha=0.01)(right)
 	Table_model = models.Model(auxiliary_input, out_right)
@@ -846,11 +855,11 @@ def build_broad_complex_model(nodes, dropout, sequence_length=50, weight_decay=1
 	"""sequence model"""
 	seq_input = layers.Input(shape=(sequence_length, 1024), name="seq_input")
 	left = layers.Bidirectional(layers.LSTM(nodes, return_sequences=True, dropout=dropout, recurrent_dropout=0.2,
-	                                        kernel_regularizer=l2(weight_decay), recurrent_regularizer=l2(weight_decay),
-	                                        bias_regularizer=l2(weight_decay)))(seq_input)
+											kernel_regularizer=l2(weight_decay), recurrent_regularizer=l2(weight_decay),
+											bias_regularizer=l2(weight_decay)))(seq_input)
 	left = layers.Bidirectional(
 		layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay),
-		            recurrent_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay)))(left)
+					recurrent_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay)))(left)
 	left = layers.Dense(nodes, kernel_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay))(left)
 	out_left = layers.LeakyReLU(alpha=0.01)(left)
 	Seq_model = models.Model(seq_input, out_left)
@@ -870,11 +879,11 @@ def build_broad_complex_model(nodes, dropout, sequence_length=50, weight_decay=1
 			table_input = layers.Input(shape=(length, 1,), name=input_name)
 			middle = layers.Bidirectional(
 				layers.LSTM(nodes, return_sequences=True, dropout=dropout, recurrent_dropout=0.2,
-				            kernel_regularizer=l2(weight_decay), recurrent_regularizer=l2(weight_decay),
-				            bias_regularizer=l2(weight_decay)))(table_input)
+							kernel_regularizer=l2(weight_decay), recurrent_regularizer=l2(weight_decay),
+							bias_regularizer=l2(weight_decay)))(table_input)
 			middle = layers.Bidirectional(
 				layers.LSTM(nodes, dropout=dropout, recurrent_dropout=0.2, kernel_regularizer=l2(weight_decay),
-				            recurrent_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay)))(middle)
+							recurrent_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay)))(middle)
 			middle = layers.Dense(nodes, kernel_regularizer=l2(weight_decay), bias_regularizer=l2(weight_decay))(middle)
 			middle_out = layers.LeakyReLU(alpha=0.01)(middle)
 			Table_model = models.Model(table_input, middle_out)
@@ -896,7 +905,7 @@ def build_broad_complex_model(nodes, dropout, sequence_length=50, weight_decay=1
 	middle = layers.LeakyReLU(alpha=0.01)(middle)
 
 	output = layers.Dense(2, activation='softmax', name='output', kernel_regularizer=l2(weight_decay),
-	                      bias_regularizer=l2(weight_decay))(middle)
+						  bias_regularizer=l2(weight_decay))(middle)
 	model = models.Model(inputs=inputs_table_cols, outputs=output)
 	model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 	model.summary()
@@ -905,16 +914,16 @@ def build_broad_complex_model(nodes, dropout, sequence_length=50, weight_decay=1
 
 
 def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=True,
-                             nodes=32, use_generator=True, epochs=100, dropout=0.0, faster=False, batch_size=32,
-                             sequence_length=50, tensorboard=False, gpus=False, cross_val=True,
-                             modular_training=True, weight_decay=1e-6, **kwargs):
+							 nodes=32, use_generator=True, epochs=100, dropout=0.0, faster=False, batch_size=32,
+							 sequence_length=50, tensorboard=False, gpus=False, cross_val=True,
+							 modular_training=True, weight_decay=1e-6, **kwargs):
 	inputs_train = {}
 	inputs_val = {}
 	inputs_test = {}
 
 	X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test = load_data(complex_model, path, val_size=0.3,
-	                                                                       generator=use_generator,
-	                                                                       sequence_length=sequence_length)
+																		   generator=use_generator,
+																		   sequence_length=sequence_length)
 	# define inputs
 	for col_num in range(10):
 		input_name = f"table_input_{col_num}"
@@ -946,11 +955,11 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 	filepath2 = path + "/weights.best.loss." + suffix + ".hdf5"
 	filepath3 = path + "/weights.best.auc10." + suffix + ".hdf5"
 	checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True,
-	                             mode='max')
+								 mode='max')
 	checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=True,
-	                              mode='min')
+								  mode='min')
 	checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1, save_best_only=True,
-	                              save_weights_only=True, mode='max')
+								  save_weights_only=True, mode='max')
 	tensorboard = TensorBoard(f'./tensorboard_log_dir')
 	callbacks_list = [checkpoint, checkpoint2, checkpoint3, tensorboard]
 
@@ -960,11 +969,11 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 		cvscores = []
 		for train, val in kfold.split(col_train, np.argmax(Y_train, axis=1)):
 			checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
-			                             save_weights_only=True, mode='max')
+										 save_weights_only=True, mode='max')
 			checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-			                              save_weights_only=True, mode='min')
+										  save_weights_only=True, mode='min')
 			checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1, save_best_only=True,
-			                              save_weights_only=True, mode='max')
+										  save_weights_only=True, mode='max')
 			if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
 				tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
 			tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
@@ -1014,7 +1023,7 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 
 					elif epo == epochs - (col_train_length * 2):
 						adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
-						                       amsgrad=False)
+											   amsgrad=False)
 						for model_table_col in list_models_table_cols:
 							set_trainability(model_table_col, True)
 							model_table_col.compile(optimizer=adam, loss='binary_crossentropy')
@@ -1025,20 +1034,20 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 						model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 
 					model.fit(inputs_train_K_fold, {'output': Y_train[train]}, callbacks=callbacks_list,
-					          validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
-					          epochs=epo + col_train_length, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
-					          initial_epoch=epo)
+							  validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
+							  epochs=epo + col_train_length, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
+							  initial_epoch=epo)
 
 					epo += col_train_length
 			else:
 				model.fit(inputs_train_K_fold, {'output': Y_train[train]}, callbacks=callbacks_list,
-				          validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
-				          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=1)
+						  validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
+						  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=1)
 
 				# load "best" model and train finer
 				model.load_weights(filepath2)
 				adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
-				                       amsgrad=False)
+									   amsgrad=False)
 				for model_table_col in list_models_table_cols:
 					set_trainability(model_table_col, True)
 					model_table_col.compile(optimizer=adam, loss='binary_crossentropy')
@@ -1049,8 +1058,8 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 				model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 
 				model.fit(inputs_train_K_fold, {'output': Y_train[train]}, callbacks=callbacks_list,
-				          validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
-				          epochs=5, batch_size=batch_size, shuffle=shuffleTraining, verbose=1)
+						  validation_data=(inputs_val_K_fold, {'output': Y_train[val]}),
+						  epochs=5, batch_size=batch_size, shuffle=shuffleTraining, verbose=1)
 
 			scores = model.evaluate(inputs_val, Y_val, verbose=0, batch_size=len(Y_val))
 			print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
@@ -1074,20 +1083,20 @@ def test_broad_complex_model(path, suffix, complex_model=True, shuffleTraining=T
 		validate_cross_val_models(model, path, inputs_test, inputs_val, Y_test, Y_val)
 	else:
 		model.fit(inputs_train,
-		          {'output': Y_train}, callbacks=callbacks_list,
-		          validation_data=(inputs_val, {'output': Y_val}),
-		          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
+				  {'output': Y_train}, callbacks=callbacks_list,
+				  validation_data=(inputs_val, {'output': Y_val}),
+				  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
 
 		compare_quality(model, path, inputs_test, Y_test, inputs_val, Y_val, pos_y_test, complex_model=False)
 
 
 def test_multiple_length(path, suffix, complex_model=False, online_training=False, shuffleTraining=True,
-                         one_hot_encoding=True, val_size=0.3, design=1, sampleSize=1, nodes=32, use_generator=True,
-                         snapShotEnsemble=False, epochs=100, dropout=0.0, faster=False, batch_size=32,
-                         sequence_length=50,
-                         voting=False, tensorboard=False, gpus=False, titel='', x_axes='', y_axes='', accuracy=False,
-                         loss=False, runtime=False, label1='', label2='', label3='', label4='', cross_val=True,
-                         modular_training=True, **kwargs):
+						 one_hot_encoding=True, val_size=0.3, design=1, sampleSize=1, nodes=32, use_generator=True,
+						 snapShotEnsemble=False, epochs=100, dropout=0.0, faster=False, batch_size=32,
+						 sequence_length=50,
+						 voting=False, tensorboard=False, gpus=False, titel='', x_axes='', y_axes='', accuracy=False,
+						 loss=False, runtime=False, label1='', label2='', label3='', label4='', cross_val=True,
+						 modular_training=True, **kwargs):
 	# create input for different models
 	inputs_train = {}
 	inputs_val = {}
@@ -1097,9 +1106,9 @@ def test_multiple_length(path, suffix, complex_model=False, online_training=Fals
 
 	for sequence_length in range(9, 51, 10):
 		X_train_i, X_val_i, X_test_i, Y_train_i, Y_val_i, Y_test_i, pos_y_test_i = load_data(complex_model, path,
-		                                                                                     val_size=0.3,
-		                                                                                     generator=use_generator,
-		                                                                                     sequence_length=sequence_length)
+																							 val_size=0.3,
+																							 generator=use_generator,
+																							 sequence_length=sequence_length)
 
 		# define inputs
 		input_name = f"seq_input_{sequence_length}"
@@ -1136,8 +1145,8 @@ def test_multiple_length(path, suffix, complex_model=False, online_training=Fals
 				inputs_val_K_fold.update({item[0]: item[1][val]})
 
 			model.fit(inputs_train_K_fold, {'output': Y_i[train]}, callbacks=callbacks_list,
-			          validation_data=(inputs_val_K_fold, {'output': Y_i[val]}),
-			          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
+					  validation_data=(inputs_val_K_fold, {'output': Y_i[val]}),
+					  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
 
 			scores = model.evaluate(inputs_val_K_fold, Y_i[val], verbose=0)
 			print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
@@ -1168,44 +1177,45 @@ def test_multiple_length(path, suffix, complex_model=False, online_training=Fals
 
 			prediction_weights = [1. / len(models_filenames)] * len(models_filenames)
 			accuracy, error = calculate_weighted_accuracy(prediction_weights, preds, preds_val, 2,
-			                                              Y=Y_test_i, Y_val=Y_val_i,
-			                                              ROC=True, name=f"{middle_name}ensemble")
+														  Y=Y_test_i, Y_val=Y_val_i,
+														  ROC=True, name=f"{middle_name}ensemble")
 
 			best_weights = weighted_ensemble(preds_val, 2, nb_models=len(models_filenames), Y=Y_val_i)
 			accuracy, error = calculate_weighted_accuracy(best_weights, preds, preds_val, 2,
-			                                              Y=Y_test_i, Y_val=Y_val_i,
-			                                              ROC=True, name=f"{middle_name}ensemble_weighted")
+														  Y=Y_test_i, Y_val=Y_val_i,
+														  ROC=True, name=f"{middle_name}ensemble_weighted")
 
 	else:
 		model.fit(inputs_train,
-		          {'output': Y_train_i}, callbacks=callbacks_list,
-		          validation_data=(inputs_val, {'output': Y_val_i}),
-		          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
+				  {'output': Y_train_i}, callbacks=callbacks_list,
+				  validation_data=(inputs_val, {'output': Y_val_i}),
+				  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2)
 
 		compare_quality(model, path, inputs_test, Y_test_i, inputs_val, Y_val_i, pos_y_test_i, complex_model=False)
 
 
 def test_and_plot(path, suffix, complex_model=False, online_training=False, shuffleTraining=True,
-                  full_seq_embedding=False,
-                  one_hot_encoding=True, val_size=0.3, design=1, sampleSize=1, nodes=32, use_generator=True,
-                  snapShotEnsemble=False, epochs=100, dropout=0.0, faster=False, batch_size=32, sequence_length=50,
-                  voting=False, tensorboard=False, gpus=False, titel='', x_axes='', y_axes='', accuracy=False,
-                  loss=False, runtime=False, label1='', label2='', label3='', label4='', cross_val=True,
-                  modular_training=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False,
-                  own_embedding=False, both_embeddings=False, **kwargs):
+				  full_seq_embedding=False,
+				  one_hot_encoding=True, val_size=0.3, design=1, sampleSize=1, nodes=32, use_generator=True,
+				  snapShotEnsemble=False, epochs=100, dropout=0.0, faster=False, batch_size=32, sequence_length=50,
+				  voting=False, tensorboard=False, gpus=False, titel='', x_axes='', y_axes='', accuracy=False,
+				  loss=False, runtime=False, label1='', label2='', label3='', label4='', cross_val=True,
+				  modular_training=True, include_raptorx_iupred=False, include_dict_scores=False, non_binary=False,
+				  own_embedding=False, both_embeddings=False, **kwargs):
 	# SAVE SETTINGS
 	with open(path + '/' + suffix + "_config.txt", "w") as file:
 		for i in list(locals().items()):
 			file.write(str(i) + '\n')
 
-	X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test, protein_mapping = load_data(complex_model, path, val_size=0.2,
-	                                                                       generator=use_generator,
-	                                                                       non_binary=non_binary,
-	                                                                       sequence_length=sequence_length,
-	                                                                       full_seq_embedding=full_seq_embedding,
-	                                                                       include_raptorx_iupred=include_raptorx_iupred,
-	                                                                       include_dict_scores=include_dict_scores,
-	                                                                       own_embedding=own_embedding)
+	X_train, X_val, X_test, Y_train, Y_val, Y_test, pos_y_test, protein_mapping = load_data(complex_model, path,
+																							val_size=0.2,
+																							generator=use_generator,
+																							non_binary=non_binary,
+																							sequence_length=sequence_length,
+																							full_seq_embedding=full_seq_embedding,
+																							include_raptorx_iupred=include_raptorx_iupred,
+																							include_dict_scores=include_dict_scores,
+																							own_embedding=own_embedding)
 	# X_test_2 = X_val.copy()
 	# Y_test_2 = Y_val.copy()
 	# X_val = X_test.copy()
@@ -1218,13 +1228,13 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 	filepath2_model = path + "/weights.best.loss." + suffix + "_complete_model.hdf5"
 	filepath3 = path + "/weights.best.auc10." + suffix + ".hdf5"
 	checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True, save_weights_only=True,
-	                             mode='max')
+								 mode='max')
 	# checkpoint = ModelCheckpoint(filepath, monitor='val_accuracy_binary', verbose=1, save_best_only=True, save_weights_only=True,
 	#                              mode='max')
 	# checkpoint = EarlyStopping('val_loss', min_delta=0, patience=epochs//10, restore_best_weights=True)
 
 	checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-	                              save_weights_only=True, mode='min')
+								  save_weights_only=True, mode='min')
 	# checkpoint2_model = ModelCheckpoint(filepath2_model, monitor='val_loss', verbose=1, save_best_only=True,
 	#                                     save_weights_only=False, mode='min')
 	checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1, save_best_only=True,
@@ -1264,33 +1274,34 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 					inputs_val.update({"aux_input": X_val.table})
 					inputs_test.update({"aux_input": X_test.table})
 		else:
-			model = build_model(nodes, dropout, seq_length=sequence_length, non_binary=non_binary, own_embedding=own_embedding, both_embeddings=both_embeddings)  # X_train.shape[1])
+			model = build_model(nodes, dropout, seq_length=sequence_length, non_binary=non_binary,
+								own_embedding=own_embedding, both_embeddings=both_embeddings)  # X_train.shape[1])
 		if use_generator:
 			if include_raptorx_iupred or include_dict_scores:
 				params = {"number_subsequences": 1, "dim": X_test.sequences.shape[1],
-				          "n_channels": X_test.sequences.shape[-1],
-				          "n_classes": Y_test.shape[-1], "shuffle": shuffleTraining, "online_training": online_training,
-				          "seed": 1, "faster": batch_size}
+						  "n_channels": X_test.sequences.shape[-1],
+						  "n_classes": Y_test.shape[-1], "shuffle": shuffleTraining, "online_training": online_training,
+						  "seed": 1, "faster": batch_size}
 			else:
 				params = {"number_subsequences": 1, "dim": X_test.shape[1], "n_channels": X_test.shape[-1],
-				          "n_classes": Y_test.shape[-1], "shuffle": shuffleTraining, "online_training": online_training,
-				          "seed": 1, "faster": batch_size}
+						  "n_classes": Y_test.shape[-1], "shuffle": shuffleTraining, "online_training": online_training,
+						  "seed": 1, "faster": batch_size}
 
 			training_generator = DataGenerator.DataGenerator(directory=directory + "/train",
-			                                                 sequence_length=sequence_length, non_binary=non_binary,
-			                                                 full_seq_embedding=full_seq_embedding,
-			                                                 include_raptorx_iupred=include_raptorx_iupred,
-			                                                 include_dict_scores=include_dict_scores,
-			                                                 **params, **kwargs)
+															 sequence_length=sequence_length, non_binary=non_binary,
+															 full_seq_embedding=full_seq_embedding,
+															 include_raptorx_iupred=include_raptorx_iupred,
+															 include_dict_scores=include_dict_scores,
+															 **params, **kwargs)
 
 			if include_raptorx_iupred or include_dict_scores:
 				model.fit_generator(generator=training_generator, epochs=epochs, callbacks=callbacks_list,
-				                    validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
-				                    verbose=1)
+									validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
+									verbose=1)
 
 				model.load_weights(filepath)
 				adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
-				                       amsgrad=False)
+									   amsgrad=False)
 				set_trainability(Table_model, True)
 				Table_model.compile(optimizer=adam, loss='binary_crossentropy')
 				set_trainability(Seq_model, False)
@@ -1300,12 +1311,12 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 				model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
 
 				model.fit_generator(generator=training_generator, epochs=5, callbacks=callbacks_list,
-				                    validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
-				                    verbose=1)
+									validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
+									verbose=1)
 
 				model.load_weights(filepath)
 				adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
-				                       amsgrad=False)
+									   amsgrad=False)
 				set_trainability(Table_model, True)
 				Table_model.compile(optimizer=adam, loss='binary_crossentropy')
 				set_trainability(Seq_model, True)
@@ -1316,17 +1327,17 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 				# model.load_weights(filepath2)
 				model.fit_generator(generator=training_generator, epochs=5, callbacks=callbacks_list,
-				                    validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
-				                    verbose=1)
+									validation_data=((inputs_val, {'output': Y_val})), shuffle=shuffleTraining,
+									verbose=1)
 			else:
 				model.fit_generator(generator=training_generator, epochs=epochs, callbacks=callbacks_list,
-				                    validation_data=(X_val, Y_val),
-				                    shuffle=shuffleTraining, verbose=1)
+									validation_data=(X_val, Y_val),
+									shuffle=shuffleTraining, verbose=1)
 
 			model.save_weights(path + "/weights.last_model." + suffix + ".hdf5")
 
 		else:
-			join_train_test_val= True
+			join_train_test_val = True
 			protein_list = list(protein_mapping.keys())
 			# define 10-fold cross validation test harness
 			kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=1337)
@@ -1365,48 +1376,54 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 					for train, test in kfold.split(protein_list, n_proteins):
 						checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
-						                             save_weights_only=True, mode='max')
+													 save_weights_only=True, mode='max')
 						checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-						                              save_weights_only=True, mode='min')
+													  save_weights_only=True, mode='min')
 						checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1,
-						                              save_best_only=True, save_weights_only=True, mode='max')
-						if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
-							tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
-						tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
+													  save_best_only=True, save_weights_only=True, mode='max')
+						if tf.gfile.Exists(f"./tensorboard_log_dir_{suffix}/run{len(cvscores)}"):
+							tf.gfile.DeleteRecursively(f"./tensorboard_log_dir_{suffix}/run{len(cvscores)}")
+						tensorboard = TensorBoard(f'./tensorboard_log_dir_{suffix}/run{len(cvscores)}')
 						callbacks_list = [checkpoint, checkpoint2, checkpoint3, tensorboard]
 
 						K.clear_session()
 						del model
 
-						model, small_model, big_model = build_model(nodes, dropout, seq_length=sequence_length, own_embedding=own_embedding, both_embeddings=both_embeddings)
+						model, small_model, big_model = build_model(nodes, dropout, seq_length=sequence_length,
+																	own_embedding=own_embedding,
+																	both_embeddings=both_embeddings)
+						with open(f"{path}/k-fold_run_{len(cvscores) + 1}_test_set.csv", "w") as outfile:
+							foo = [protein_mapping[i][0] + "\n" for i in test]
+							outfile.writelines(foo)
+						train = [j for i in train for j in protein_mapping[i][1]]
+						test = [j for i in test for j in protein_mapping[i][1]]
 
-						train = [k for i in train for j in protein_mapping[i] for k in j]
-						test = [k for i in test for j in protein_mapping[i] for k in j]
 						assert len(test) == len(np.unique(test)), "duplicates found in k_fold test split"
 						if both_embeddings:
-							model.fit([X[train],X_seq[train]], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
-							          validation_data=([X[test], X_seq[test]], Y[test]),
-							          callbacks=callbacks_list, shuffle=shuffleTraining)
-
-							# model.load_weights(filepath3)
-							adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
-												   amsgrad=False)
-							set_trainability(big_model, True)
-							big_model.compile(optimizer="adam", loss='binary_crossentropy')
-							set_trainability(small_model, False)
-							set_trainability(model, True)
-
-							small_model.compile(optimizer="adam", loss='binary_crossentropy')
-							model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
-
-							model.fit([X[train], X_seq[train]], Y[train], epochs=10, batch_size=batch_size, verbose=2,
+							model.fit([X[train], X_seq[train]], Y[train], epochs=epochs, batch_size=batch_size,
+									  verbose=2,
 									  validation_data=([X[test], X_seq[test]], Y[test]),
 									  callbacks=callbacks_list, shuffle=shuffleTraining)
 
+						# # model.load_weights(filepath3)
+						# adam = optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0,
+						# 					   amsgrad=False)
+						# set_trainability(big_model, True)
+						# big_model.compile(optimizer=adam, loss='binary_crossentropy')
+						# set_trainability(small_model, True)
+						# set_trainability(model, True)
+						#
+						# small_model.compile(optimizer=adam, loss='binary_crossentropy')
+						# model.compile(optimizer=adam, loss='binary_crossentropy', metrics=['acc', auc_10_perc_fpr])
+						#
+						# model.fit([X[train], X_seq[train]], Y[train], epochs=10, batch_size=batch_size, verbose=2,
+						# 		  validation_data=([X[test], X_seq[test]], Y[test]),
+						# 		  callbacks=callbacks_list, shuffle=shuffleTraining)
+
 						else:
 							model.fit(X[train], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
-							          validation_data=(X[test], Y[test]),
-							          callbacks=callbacks_list, shuffle=shuffleTraining)
+									  validation_data=(X[test], Y[test]),
+									  callbacks=callbacks_list, shuffle=shuffleTraining)
 						if both_embeddings:
 							scores = model.evaluate([X[test], X_seq[test]], Y[test], verbose=0, batch_size=batch_size)
 						else:
@@ -1416,11 +1433,11 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 						model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						os.rename(filepath,
-						          f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						os.rename(filepath2,
-						          f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						os.rename(filepath3,
-						          f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 
 						# Compute ROC curve and area the curve
 						if both_embeddings:
@@ -1433,7 +1450,7 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 						roc_auc = metrics.auc(fpr, tpr)
 						aucs.append(roc_auc)
 						plt.plot(fpr, tpr, lw=1, alpha=0.3,
-						         label='ROC fold %d (AUC = %0.2f)' % (len(cvscores), roc_auc))
+								 label='ROC fold %d (AUC = %0.2f)' % (len(cvscores), roc_auc))
 
 					mean_tpr = np.mean(tprs, axis=0)
 					mean_tpr[-1] = 1.0
@@ -1444,11 +1461,11 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 					tprs_upper = np.minimum(mean_tpr + std_tpr, 1)
 					tprs_lower = np.maximum(mean_tpr - std_tpr, 0)
 					plt.fill_between(mean_fpr, tprs_lower, tprs_upper, color='grey', alpha=.2,
-					                 label=r'$\pm$ 1 std. dev.')
+									 label=r'$\pm$ 1 std. dev.')
 
 					plt.plot(mean_fpr, mean_tpr, color='b',
-					         label=r'Mean ROC (AUC = %0.2f $\pm$ %0.2f)' % (mean_auc, std_auc),
-					         lw=2, alpha=.8)
+							 label=r'Mean ROC (AUC = %0.2f $\pm$ %0.2f)' % (mean_auc, std_auc),
+							 lw=2, alpha=.8)
 					plt.plot([0, 1], [0, 1], 'k--', lw=2)
 					plt.xlim([0.0, 1.0])
 					plt.ylim([0.0, 1.05])
@@ -1466,11 +1483,11 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 					for train, test in kfold.split(X, np.argmax(Y, axis=1)):
 						checkpoint = ModelCheckpoint(filepath, monitor='val_acc', verbose=1, save_best_only=True,
-						                             save_weights_only=True, mode='max')
+													 save_weights_only=True, mode='max')
 						checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-						                              save_weights_only=True, mode='min')
+													  save_weights_only=True, mode='min')
 						checkpoint3 = ModelCheckpoint(filepath3, monitor='val_auc_10_perc_fpr', verbose=1,
-						                              save_best_only=True, save_weights_only=True, mode='max')
+													  save_best_only=True, save_weights_only=True, mode='max')
 						if tf.gfile.Exists(f"./tensorboard_log_dir/run{len(cvscores)}"):
 							tf.gfile.DeleteRecursively(f"./tensorboard_log_dir/run{len(cvscores)}")
 						tensorboard = TensorBoard(f'./tensorboard_log_dir/run{len(cvscores)}')
@@ -1482,8 +1499,8 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 						model = build_model(nodes, dropout, seq_length=sequence_length, own_embedding=own_embedding)
 
 						model.fit(X[train], Y[train], epochs=epochs, batch_size=batch_size, verbose=2,
-						          validation_data=(X_val, Y_val),
-						          callbacks=callbacks_list, shuffle=shuffleTraining)
+								  validation_data=(X_val, Y_val),
+								  callbacks=callbacks_list, shuffle=shuffleTraining)
 						scores = model.evaluate(X[test], Y[test], verbose=0)
 						scores = model.evaluate(X[test], Y[test], verbose=0, batch_size=batch_size)
 
@@ -1493,11 +1510,11 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 						model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						# if real val_set exists, use models with lowest val_loss as models in ensemble
 						os.rename(filepath,
-						          f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_highest_val_acc_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						os.rename(filepath2,
-						          f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_lowest_val_loss_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 						os.rename(filepath3,
-						          f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
+								  f"{path}/weights_model_highest_val_auc10_k-fold_run_{len(cvscores)}_{suffix}.hdf5")
 
 						print("summary")
 					print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
@@ -1506,13 +1523,13 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 			else:
 				model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size, validation_data=(X_val, Y_val),
-				          verbose=1, callbacks=callbacks_list, shuffle=shuffleTraining)
+						  verbose=1, callbacks=callbacks_list, shuffle=shuffleTraining)
 	else:
 		class_weight = clw.compute_class_weight('balanced', np.unique(np.argmax(Y_train, axis=1)),
-		                                        np.argmax(Y_train, axis=1))
+												np.argmax(Y_train, axis=1))
 		print(class_weight)
 		model = build_complex_model(nodes, dropout, seq_length=X_train.seq_length,
-		                            table_columns=X_train.table.shape[1])
+									table_columns=X_train.table.shape[1])
 
 		# define 10-fold cross validation test harness
 		kfold = StratifiedKFold(n_splits=10, shuffle=True, random_state=1337)
@@ -1523,14 +1540,14 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 		for train, test in kfold.split(X.sequences, np.argmax(Y, axis=1)):
 			if cross_val:
 				class_weight = clw.compute_class_weight('balanced', np.unique(np.argmax(Y[train], axis=1)),
-				                                        np.argmax(Y[train], axis=1))
+														np.argmax(Y[train], axis=1))
 				print(class_weight)
 			checkpoint2 = ModelCheckpoint(filepath2, monitor='val_acc', verbose=1, save_best_only=True, mode='max')
 			callbacks_list = [checkpoint2]
 			K.clear_session()
 			del model
 			model, Seq_model, Table_model = build_complex_model(nodes, dropout, seq_length=sequence_length,
-			                                                    table_columns=X_train.table.shape[1])
+																table_columns=X_train.table.shape[1])
 			# plot graph
 			plot_model(model, to_file='multiple_inputs.png')
 			modular_training = True
@@ -1547,34 +1564,34 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 					if cross_val:
 						model.fit({'seq_input': X.sequences[train], 'aux_input': X.table[train]},
-						          {'output': Y[train]}, callbacks=callbacks_list, validation_data=(
+								  {'output': Y[train]}, callbacks=callbacks_list, validation_data=(
 								{'seq_input': X_val.sequences, 'aux_input': X_val.table}, {'output': Y_val}),
-						          epochs=epo + 1, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
-						          class_weight=class_weight, initial_epoch=epo)
+								  epochs=epo + 1, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
+								  class_weight=class_weight, initial_epoch=epo)
 					else:
 						model.fit({'seq_input': X_train.sequences, 'aux_input': X_train.table},
-						          {'output': Y_train}, callbacks=callbacks_list,
-						          validation_data=(
-							          {'seq_input': X_val.sequences, 'aux_input': X_val.table}, {'output': Y_val}),
-						          epochs=epo + 1, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
-						          class_weight=class_weight, initial_epoch=epo)
+								  {'output': Y_train}, callbacks=callbacks_list,
+								  validation_data=(
+									  {'seq_input': X_val.sequences, 'aux_input': X_val.table}, {'output': Y_val}),
+								  epochs=epo + 1, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
+								  class_weight=class_weight, initial_epoch=epo)
 			else:
 				if cross_val:
 					model.fit({'seq_input': X.sequences[train], 'aux_input': X.table[train]},
-					          {'output': Y[train]}, callbacks=callbacks_list,
-					          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
-					          class_weight=class_weight)
+							  {'output': Y[train]}, callbacks=callbacks_list,
+							  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
+							  class_weight=class_weight)
 				else:
 					model.fit({'seq_input': X_train.sequences, 'aux_input': X_train.table},
-					          {'output': Y_train}, callbacks=callbacks_list,
-					          validation_data=(
-						          {'seq_input': X_val.sequences, 'aux_input': X_val.table}, {'output': Y_val}),
-					          epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
-					          class_weight=class_weight)
+							  {'output': Y_train}, callbacks=callbacks_list,
+							  validation_data=(
+								  {'seq_input': X_val.sequences, 'aux_input': X_val.table}, {'output': Y_val}),
+							  epochs=epochs, batch_size=batch_size, shuffle=shuffleTraining, verbose=2,
+							  class_weight=class_weight)
 
 			if cross_val:
 				scores = model.evaluate({'seq_input': X.sequences[test], 'aux_input': X.table[test]},
-				                        {'output': Y[test]}, verbose=0)
+										{'output': Y[test]}, verbose=0)
 				print("%s: %.2f%%" % (model.metrics_names[1], scores[1] * 100))
 				cvscores.append(scores[1] * 100)
 				model.save_weights(f"{path}/weights_model_k-fold_run_{len(cvscores)}.hdf5")
@@ -1615,17 +1632,17 @@ def test_and_plot(path, suffix, complex_model=False, online_training=False, shuf
 
 				prediction_weights = [1. / len(models_filenames)] * len(models_filenames)
 				accuracy, error = calculate_weighted_accuracy(prediction_weights, preds, preds_val, 2,
-				                                              Y=Y_test, Y_val=Y_val,
-				                                              ROC=True, name=f"{middle_name}ensemble")
+															  Y=Y_test, Y_val=Y_val,
+															  ROC=True, name=f"{middle_name}ensemble")
 
 				best_weights = weighted_ensemble(preds_val, 2, nb_models=len(models_filenames), Y=Y_val)
 				accuracy, error = calculate_weighted_accuracy(best_weights, preds, preds_val, 2,
-				                                              Y=Y_test, Y_val=Y_val,
-				                                              ROC=True, name=f"{middle_name}ensemble_weighted")
+															  Y=Y_test, Y_val=Y_val,
+															  ROC=True, name=f"{middle_name}ensemble_weighted")
 
 	if not cross_val:
 		compare_quality(model, path, X_test, Y_test, X_val, Y_val, pos_y_test, complex_model=complex_model,
-		                include_raptorx_iupred=include_raptorx_iupred or include_dict_scores)
+						include_raptorx_iupred=include_raptorx_iupred or include_dict_scores)
 
 
 def validate_cross_val_models(model, path, inputs_test, inputs_val, Y_test, Y_val):
@@ -1648,17 +1665,17 @@ def validate_cross_val_models(model, path, inputs_test, inputs_val, Y_test, Y_va
 
 		prediction_weights = [1. / len(models_filenames)] * len(models_filenames)
 		accuracy, error = calculate_weighted_accuracy(prediction_weights, preds, preds_val, 2,
-		                                              Y=Y_test, Y_val=Y_val,
-		                                              ROC=True, name=f"{middle_name}ensemble")
+													  Y=Y_test, Y_val=Y_val,
+													  ROC=True, name=f"{middle_name}ensemble")
 
 		best_weights = weighted_ensemble(preds_val, 2, nb_models=len(models_filenames), Y=Y_val)
 		accuracy, error = calculate_weighted_accuracy(best_weights, preds, preds_val, 2,
-		                                              Y=Y_test, Y_val=Y_val,
-		                                              ROC=True, name=f"{middle_name}ensemble_weighted")
+													  Y=Y_test, Y_val=Y_val,
+													  ROC=True, name=f"{middle_name}ensemble_weighted")
 
 
 def calculate_weighted_accuracy(prediction_weights, preds, preds_val, nb_classes, Y, Y_val, ROC=True,
-                                name="ensemble"):
+								name="ensemble"):
 	"""
 	equally weighted model prediction accuracy
 	:param prediction_weights: array with weights of single models e.g. [0,0.6,0.4]
@@ -1788,12 +1805,12 @@ def weighted_ensemble(preds, nb_classes, nb_models, Y, NUM_TESTS=250):
 
 		# Minimise the loss
 		result = minimize(log_loss_func, prediction_weights, args=(Y, preds, nb_classes), method='SLSQP',
-		                  bounds=bounds, constraints=constraints)
+						  bounds=bounds, constraints=constraints)
 		# print('Best Ensemble Weights: {weights}'.format(weights=result['x']))
 		weights = result['x']
 		foo.append(weights)
 		accuracy, error = calculate_weighted_accuracy(prediction_weights, preds, None, 2, Y=Y, Y_val=None,
-		                                              ROC=False)
+													  ROC=False)
 
 		if accuracy > best_acc:
 			best_acc = accuracy
@@ -1809,10 +1826,11 @@ acc = []
 std_div = []
 
 if __name__ == "__main__":
-	directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.5_seqID"
+	directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_double_cluster_0.8_0.5_seqID"
+	# directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.5_seqID"
 	# directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_0.8_seqID_checked_output"
 	# directory = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_binary_allProteins"
-	suffix = "both_embeddings_small_big_approach_keep_learning_long"
+	suffix = "both_embeddings_LSTM_equal_short_training"
 	complex_model = False
 	nodes = 10
 	dropout = 0.4
@@ -1824,8 +1842,9 @@ if __name__ == "__main__":
 	own_embedding = False
 	both_embeddings = True
 	if both_embeddings:
-		own_embedding=False
+		own_embedding = False
 	test_and_plot(path=directory, suffix=suffix, complex_model=complex_model, nodes=nodes, dropout=dropout,
-	              epochs=50, use_generator=False, batch_size=640, sequence_length=sequence_length, cross_val=True,
-	              full_seq_embedding=full_seq_embedding, include_raptorx_iupred=include_raptorx_iupred,
-	              include_dict_scores=include_dict_scores, non_binary=non_binary, own_embedding=own_embedding, both_embeddings=both_embeddings)
+				  epochs=3, use_generator=False, batch_size=64, sequence_length=sequence_length, cross_val=True,
+				  full_seq_embedding=full_seq_embedding, include_raptorx_iupred=include_raptorx_iupred,
+				  include_dict_scores=include_dict_scores, non_binary=non_binary, own_embedding=own_embedding,
+				  both_embeddings=both_embeddings)

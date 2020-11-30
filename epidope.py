@@ -49,7 +49,6 @@ args = parser.parse_args()
 ########################
 
 
-######## Flo stuff ######
 class Protein_seq():
 	def __init__(self, sequence, score, over_threshold, positions=None):
 		self.sequence = sequence
@@ -188,68 +187,6 @@ with open(multifasta,'r') as infile:
 				fasta[acNumber] = line.strip()
 
 
-'''
-##############################################
-###### Deeploc localisation prediction #######
-##############################################
-
-##### progress vars ####
-filecounter = 1
-total = str(len(fasta))
-########################
-
-# function to call and save deeploc results
-def run_deeploc(geneid, sequence, outdir, filecounter):
-	print(f'Started Deeploc for {geneid}    File: {filecounter} / {total}')
-	out_ids, out_loc, out_mem = prediction([geneid], [sequence], 1)
-	deeploc_out = np.insert(out_loc[0], 0, out_mem[0]).tolist()
-	outfile = f'{outdir}/deeploc/{geneid}.csv'
-	with open(outfile, 'w') as outfile:
-		outfile.write('#Membrane	Nucleus	Cytoplasm	Extracellular	Mitochondrion	Cell_membrane	Endoplasmic_reticulum	Plastid	Golgi_apparatus	Lysosome/Vacuole	Peroxisome\n')
-		outfile.write('\t'.join([str(x) for x in deeploc_out]))
-	print(f'Finished Deeploc for {geneid}    File: {filecounter} / {total}')
-
-if not os.path.exists(outdir + '/deeploc'):
-	os.makedirs(outdir + '/deeploc')
-# run deeploc in multiple processes
-pool = Pool(processes=processes)
-print('\nRunning Deeploc protein localisation prediction.')
-deeploc_dict = {}
-for geneid in fasta:
-	pool.apply_async(run_deeploc, args=(geneid, fasta[geneid], outdir, filecounter))
-	filecounter += 1
-pool.close()
-pool.join()
-print()
-# read deeploc result files
-print('Reading Deeploc results.')
-deeploc_dict = {}
-deeplocfiles = glob.glob(f'{outdir}/deeploc/*')
-for file in deeplocfiles:
-	geneid = file.rsplit('/',1)[1][:-4]
-	with open(file, 'r') as infile:
-		for line in infile:
-			if not line.startswith('#'):
-				deeploc_dict[geneid] = [float(x) for x in line.strip().split('\t')]
-
-##############################################
-'''
-
-'''
-##### remove sequences that are too short #####
-removed = []
-for geneid in fasta:
-	if len(fasta[geneid]) <= slicesize:
-		removed.append(geneid)
-if len(removed):
-	print(f'{len(removed)} genes have been removed for beeing shorter than {slicesize} amino acids.')
-	open(outdir + '/removed_genes.csv', 'w').close()
-	with open(outdir + '/removed_genes.csv', 'w') as outfile:
-		for geneid in removed:
-			del fasta[geneid]
-			outfile.write(f'{geneid}\n')
-	print()
-'''
 ##### reading provided epitope lists #######
 epitopes = list()
 if args.e:
@@ -268,7 +205,6 @@ if args.n:
 	print('There were ' + str(len(nonepitopes)) + ' non-epitope sequences provided.')
 print()
 
-# TODO
 def ensemble_prediction(model, path, inputs_test, suffix, middle_name = "", prediction_weights = False, nb_classes = 2):
 	models_filenames = []
 	for file in sorted(os.listdir(path)):
@@ -289,19 +225,7 @@ def ensemble_prediction(model, path, inputs_test, suffix, middle_name = "", pred
 		weighted_predictions += weight * np.array(prediction)
 
 	return weighted_predictions
-"""
-OLD
-# location of weights from the previously trained model
-#model_path = "/home/go96bix/projects/epitop_pred/epitope_data/weights.best.loss.test_generator.hdf5"
-model_path = "/home/go96bix/projects/epitop_pred/epitope_data/weights.best.loss.only_seq_data_no_weight_decay.hdf5"
-# load weights, after this step the model behaves as we trained it
-model.load_weights(model_path)
-"""
-#model_path = "/home/go96bix/projects/epitop_pred/data_generator_final/both_non_epitopes/global_embedding/weights.best.auc10.2nd_try_final.hdf5"	# 25 nodes
-# model_path = "/home/go96bix/projects/epitop_pred/data_generator_final/validated_non_epitopes/global_embedding/weights.best.loss.test_final_local_validated_non_epi.hdf5"	# 100 nodes
-# model_path = "/home/go96bix/projects/epitop_pred/data_generator_final/both_non_epitopes/global_embedding/weights.best.loss.2nd_try_final.hdf5"	# 25 nodes
-# model_path = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_final/local_embedding/weights.best.auc10.250_nodes_with_decay_local.hdf5"	# 250 nodes
-# model_path = "/home/go96bix/projects/epitop_pred/data_generator_bepipred/local_embedding/weights.best.loss.250nodes_weight_decay.hdf5"	# 250 nodes
+
 model_path_local = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_final/local_embedding/weights.best.auc10.250_nodes_with_decay_local.hdf5"	# 250 nodes
 model_path_global = "/home/go96bix/projects/epitop_pred/data_generator_bepipred_final/global_embedding/weights.best.auc10.250_nodes_with_decay.hdf5"	# 250 nodes
 shift = 22
@@ -320,7 +244,7 @@ holydict = {}
 
 
 ##############################################
-######### DeEpiPred score prediction #########
+######### EpiDope score prediction #########
 ##############################################
 
 ##### progress vars ####
@@ -329,7 +253,7 @@ printlen = 1
 total = str(len(fasta))
 ########################
 
-print('\nPredicting DeEpiPred scores.')
+print('\nPredicting EpiDope scores.')
 # go over all entries in dict
 for geneid in fasta:
 	score_both_models = []
@@ -570,8 +494,8 @@ for geneid in holydict:
 ############### Output results ###############
 ##############################################
 
-if not os.path.exists(outdir + '/deepipred'):
-	os.makedirs(outdir + '/deepipred')
+if not os.path.exists(outdir + '/EpiDope'):
+	os.makedirs(outdir + '/EpiDope')
 
 
 
@@ -583,12 +507,12 @@ slice_shiftsize = 5
 print(f'\n\nWriting predicted epitopes to:\n{outdir}/predicted_epitopes.csv\n{outdir}/predicted_epitopes_sliced.faa')
 open(f'{outdir}/predicted_epitopes.csv', 'w').close()
 open(f'{outdir}/predicted_epitopes_sliced.faa', 'w').close()
-open(f'{outdir}/deepipred_scores.csv', 'w').close()
+open(f'{outdir}/EpiDope_scores.csv', 'w').close()
 open(f'{outdir}/hydrophilicity_parker_scores.csv', 'w').close()
 # open(f'{outdir}/max_min_diff_scores.csv', 'w').close()
 with open(f'{outdir}/predicted_epitopes.csv','w') as outfile:
 	with open(f'{outdir}/predicted_epitopes_sliced.faa','w') as outfile2:
-		with open(f'{outdir}/deepipred_scores.csv', 'w') as outfile3:
+		with open(f'{outdir}/EpiDope_scores.csv', 'w') as outfile3:
 			with open(f'{outdir}/hydrophilicity_parker_scores.csv', 'w') as outfile4:
 				with open(f'{outdir}/max_min_diff_scores.csv', 'w') as outfile5:
 					outfile.write('#Gene_ID\tstart\tend\tsequence\tscore')
@@ -604,10 +528,10 @@ with open(f'{outdir}/predicted_epitopes.csv','w') as outfile:
 						start = 0
 						end = 0
 						i = 0
-						out = f'{outdir}/deepipred/{geneid}.csv'
+						out = f'{outdir}/EpiDope/{geneid}.csv'
 						with open(out,'w') as outfile6:
 							# write complete scores to file
-							outfile6.write('#Aminoacid\tDeepipred\n')
+							outfile6.write('#Aminoacid\tEpiDope\n')
 							outfile3.write(f'>{geneid}\n')
 							outfile4.write(f'>{geneid}\n')
 							# outfile5.write(f'>{geneid}\n')
@@ -697,8 +621,8 @@ for geneid in holydict:
 #	l10 = p.line(range(1,protlen+1), pwa_score, line_width=1,color='darkgreen', visible = False)
 #	l12 = p.line(range(1,protlen+1), hyrophilicity_parker_score, line_width=1,color='black', visible = False)
 
-	#legend = Legend(items=[('DeEpiPred',[l1]), ('epitope_threshold',[l2]) ] )
-	legend = Legend(items=[('DeEpiPred',[l1]),
+	#legend = Legend(items=[('EpiDope',[l1]), ('epitope_threshold',[l2]) ] )
+	legend = Legend(items=[('EpiDope',[l1]),
 	('epitope_threshold',[l2]) ])
 #	('pwa_score',[l10]),
 #	('hydrophilicity by parker', [l12]) ] )	# aa k-mer score and pwm
@@ -757,15 +681,4 @@ for geneid in holydict:
 				p.vbar(x = list(pos), bottom = -0.02, top = non_epitope, width = 1, alpha = 0.2, line_alpha = 0, color = 'darkred', legend = 'provided_non_epitope', visible = False)
 
 	save(column(p,plot))
-'''
-	# DeepLoc barplot
-	deeploclocations = ['Membrane','Nucleus','Cytoplasm','Extracellular','Mitochondrion','Cell_membrane','Endoplasmic_reticulum','Plastid','Golgi_apparatus','Lysosome/Vacuole','Peroxisome']
-	deepplot = figure(x_range=deeploclocations, plot_height=350, title="DeepLoc", toolbar_location=None, tools="")
-	deepplot.vbar(x = deeploclocations, top=deeploc_dict[geneid], width = 0.8)
-	deepplot.xgrid.grid_line_color = None
-	deepplot.xaxis.major_label_orientation = pi/2
-	deepplot.y_range.start = 0
-
-	save(column(p,plot,deepplot))
-'''
 

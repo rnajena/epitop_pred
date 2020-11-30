@@ -9,7 +9,7 @@ import os
 import time
 
 epitope_threshold = 0.75
-deepipred_results_dir = f'/home/go96bix/projects/raw_data/binary_25_nodes_100_epochs_08DO_0.5_seqID_newEmbedding/results/'
+deepipred_results_dir = f'/home/go96bix/projects/raw_data/test_training_data'
 outdir = os.path.join(deepipred_results_dir, 'plots2/')
 starttime = time.time()
 
@@ -67,12 +67,12 @@ def frame_avg(values, frame_extend=2):
 
 holydict = {}
 
-for root, dirs, files in os.walk(os.path.join(deepipred_results_dir, "deepipred/"), topdown=False):
+for root, dirs, files in os.walk(os.path.join(deepipred_results_dir, "epidope/"), topdown=False):
 	for name in files:
 		file = os.path.join(root, name)
-		df = pd.read_csv(file, sep='\t', index_col=False)
-		letter_arr = df.values[:, 0]
-		value_arr = np.array(df.values[:, 1], dtype=np.float)
+		df = pd.read_csv(file, sep='\t', index_col=False, skiprows=1)
+		letter_arr = df.values[:, 1]
+		value_arr = np.array(df.values[:, 2], dtype=np.float)
 
 		score_bool = value_arr > epitope_threshold
 		protein = Protein_seq(sequence="".join(letter_arr), score=value_arr, over_threshold=score_bool)
@@ -112,7 +112,7 @@ for geneid in holydict:
 	l1 = p.line(range(1, protlen + 1), score, line_width=1, color='black', visible=True)
 	l2 = p.line(range(1, protlen + 1), ([epitope_threshold] * protlen), line_width=1, color='red', visible=True)
 
-	legend = Legend(items=[('DeEpiPred', [l1]),
+	legend = Legend(items=[('EpiDope', [l1]),
 	                       ('epitope_threshold', [l2])])
 
 	p.add_layout(legend, 'right')
